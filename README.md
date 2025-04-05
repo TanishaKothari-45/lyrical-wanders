@@ -1,4 +1,4 @@
-# Lyrical Wonders - Chaos Visualizer
+# Lyrical Wanders - Chaos Visualizer
 
 An advanced, immersive audio visualizer that creates dynamic, wave-based visualizations from your music. The visualizer transforms audio data into mesmerizing visual patterns with fluid wave motions, particle explosions, and dynamic color responses.
 
@@ -28,7 +28,7 @@ A modern web browser with WebGL and Web Audio API support.
 
 1. Clone this repository
 ```bash
-git clone https://github.com/yourusername/lyrical-wonders.git
+git clone git remote add origin https://github.com/TanishaKothari-45/lyrical-wanders.git
 cd lyrical-wonders
 ```
 
