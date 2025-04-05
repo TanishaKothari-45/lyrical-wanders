@@ -1,0 +1,1913 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chaos Visualizer - Tone.js</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        /* CSS styles remain the same as the previous version */
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif; /* Modern font */
+            background: #0a0a0a; /* Darker background */
+            color: #e0e0e0; /* Lighter text */
+            overflow: hidden; /* Prevent scrollbars */
+        }
+        #ui-container {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .control-panel {
+            padding: 15px;
+            background: rgba(30, 30, 30, 0.8); /* Slightly transparent dark background */
+            backdrop-filter: blur(5px); /* Frosted glass effect */
+            border-radius: 8px; /* Rounded corners */
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3); /* Subtle shadow */
+            border: 1px solid rgba(255, 255, 255, 0.1); /* Subtle border */
+        }
+        #input-container label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        #audioInput {
+            display: none; /* Hide default input */
+        }
+        .file-upload-button, button {
+            padding: 10px 18px;
+            background: linear-gradient(145deg, #3a3a3a, #2a2a2a); /* Gradient background */
+            color: white;
+            border: none;
+            border-radius: 6px; /* Rounded corners */
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Button shadow */
+            display: inline-block; /* Align properly */
+            text-align: center;
+        }
+        .file-upload-button:hover, button:hover {
+            background: linear-gradient(145deg, #454545, #353535);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            transform: translateY(-1px); /* Slight lift on hover */
+        }
+        button:disabled {
+            background: #252525;
+            color: #555;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+        #controls {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px; /* Increased gap */
+        }
+        #nowPlaying {
+            margin-top: 12px;
+            font-size: 13px;
+            color: #aaa;
+            word-break: break-all; /* Prevent long filenames from overflowing */
+        }
+        #frequency-graph-container {
+            width: 300px; /* Fixed width */
+        }
+        #frequency-graph {
+            display: block;
+            width: 100%;
+            height: 100px; /* Adjusted height */
+            background-color: rgba(0, 0, 0, 0.3); /* Slightly transparent black */
+            border-radius: 4px; /* Rounded corners for canvas bg */
+            margin-bottom: 5px;
+        }
+        #labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px; /* Smaller labels */
+            color: #bbb;
+            padding: 0 5px; /* Add padding */
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            color: #fff;
+            background: rgba(0,0,0,0.7);
+            padding: 20px 40px;
+            border-radius: 8px;
+            display: none; /* Hidden by default */
+            z-index: 100;
+        }
+        canvas#webgl-canvas { /* Target the main canvas */
+            display: block;
+            position: fixed; /* Ensure it covers the whole screen */
+            top: 0;
+            left: 0;
+            z-index: 0; /* Behind UI */
+        }
+        /* Add Inter font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');
+        #average-labels { /* Style for average labels */
+             font-size: 11px;
+             color: #bbb;
+             margin-top: 5px;
+             text-align: center;
+        }
+        /* Additional styles for the filter controls */
+        .filter-row {
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+        .filter-row label {
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+        .filter-row input, .filter-row select {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #eee;
+            padding: 5px;
+        }
+        .filter-row input[type="range"] {
+            height: 5px;
+        }
+        #filter-toggle {
+            width: 100%;
+            margin-top: 5px;
+        }
+        #filter-toggle.active {
+            background: linear-gradient(145deg, #5a3a3a, #3a2a2a);
+        }
+    </style>
+</head>
+<body>
+    <div id="ui-container">
+        <div id="input-container" class="control-panel">
+            <label for="audioInput" class="file-upload-button">Choose Audio File</label>
+            <input type="file" id="audioInput" accept="audio/*">
+            <div id="controls">
+                <button id="playPauseButton" disabled>Play</button>
+                <button id="stopButton" disabled>Stop</button>
+            </div>
+            <div id="nowPlaying">No file loaded.</div>
+        </div>
+
+        <div id="frequency-graph-container" class="control-panel">
+            <canvas id="frequency-graph" width="300" height="100"></canvas>
+             <div id="labels">
+                <span>Bass</span>
+                <span>Mids</span>
+                <span>Treble</span>
+            </div>
+            <div id="average-labels">Avg: Bass: 0.00 | Mids: 0.00 | Treble: 0.00</div>
+        </div>
+
+        <div id="filter-controls" class="control-panel">
+            <h3 style="margin-top: 0; margin-bottom: 10px; font-size: 14px;">Audio Filters</h3>
+            <div class="filter-row">
+                <label for="filter-type">Type:</label>
+                <select id="filter-type">
+                    <option value="lowpass">Lowpass</option>
+                    <option value="highpass">Highpass</option>
+                    <option value="bandpass">Bandpass</option>
+                    <option value="notch">Notch</option>
+                    <option value="allpass">Allpass</option>
+                </select>
+            </div>
+            <div class="filter-row">
+                <label for="filter-frequency">Frequency: <span id="freq-value">1000</span>Hz</label>
+                <input type="range" id="filter-frequency" min="20" max="20000" value="1000" step="1">
+            </div>
+            <div class="filter-row">
+                <label for="filter-q">Resonance: <span id="q-value">1</span></label>
+                <input type="range" id="filter-q" min="0.1" max="20" value="1" step="0.1">
+            </div>
+            <div class="filter-row">
+                <label for="filter-auto">Auto-Filter:</label>
+                <select id="filter-auto">
+                    <option value="off">Off</option>
+                    <option value="beat">Beat Synced</option>
+                    <option value="lfo">LFO Sweep</option>
+                    <option value="follow">Frequency Follow</option>
+                </select>
+            </div>
+            <button id="filter-toggle">Enable Filter</button>
+        </div>
+    </div>
+
+    <div id="loading">Loading...</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <!-- Add post-processing scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+
+        <script>
+        // --- Global Variables ---
+        let scene, camera, renderer;
+        let composer, bloomPass; // Post-processing variables
+        let audioContext; // Native Web Audio API context
+        let dataArray, bufferLength; // For frequency data storage
+        let audioElement = null;
+        let audioPlaying = false;
+        let source = null; // MediaElementSourceNode
+        let particles, particleGeometry, particleMaterial;
+        let particlePositions, particleColors, initialParticlePositions;
+        let sphere, sphereVertices;
+
+        // *** TONE.JS VARIABLES ***
+        let toneMeter = null; // To measure volume level for transient detection
+        let tonePlayer = null; // Tone.js audio player
+        let toneFft = null; // Tone.js FFT analyzer - we'll properly use this
+        let toneBeatDetect = null; // Custom beat detection system
+        let toneFilter = null; // Tone.Filter for audio effects
+        let toneFilterLFO = null; // LFO for automated filter sweeps
+        let filterEnabled = false; // Whether the filter is currently active
+        let filterAutoMode = "off"; // Current auto filter mode
+        let lastLevel = -Infinity; // Store previous level for peak detection
+        let peakIntensity = 0; // Controls the intensity of the visual peak effect
+        const PEAK_DECAY = 0.92; // How fast the peak effect fades (lower = faster)
+        const PEAK_THRESHOLD = 6; // dB increase needed to trigger a peak (adjust this)
+        const BASE_PARTICLE_SIZE = 1.0; // Further reduced from 1.5
+
+        const PARTICLE_COUNT = 4000; // Reduced from 5000 for better performance
+        const FFT_SIZE = 256; // Size of FFT analysis (power of 2)
+
+        // DOM Elements (same as before)
+        const audioInput = document.getElementById('audioInput');
+        const playPauseButton = document.getElementById('playPauseButton');
+        const stopButton = document.getElementById('stopButton');
+        const nowPlayingDiv = document.getElementById('nowPlaying');
+        const loadingDiv = document.getElementById('loading');
+        const freqCanvas = document.getElementById('frequency-graph');
+        const freqCtx = freqCanvas.getContext('2d');
+        const avgLabelsDiv = document.getElementById('average-labels');
+
+
+        // --- Initialization ---
+        function init() {
+            // Three.js Setup (same as before)
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.z = 650; // Increased from 500 to 650 to match the animation default
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setClearColor(0x0a0a0a);
+            renderer.domElement.id = 'webgl-canvas';
+            document.body.appendChild(renderer.domElement);
+            
+            // Set up post-processing
+            setupPostProcessing();
+
+            // Add a sphere for audio-reactive deformations
+            const sphereGeometry = new THREE.SphereGeometry(25, 64, 64); // Reduced inner sphere size
+            const sphereMaterial = new THREE.MeshPhongMaterial({
+                color: 0xffffff,
+                emissive: 0x111111,
+                specular: 0xffffff,
+                shininess: 50,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.4
+            });
+            
+            // Store original sphere vertices for deformation
+            sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+            scene.add(sphere);
+            
+            // Store original positions
+            sphereVertices = new Float32Array(sphere.geometry.attributes.position.array.length);
+            for (let i = 0; i < sphere.geometry.attributes.position.array.length; i++) {
+                sphereVertices[i] = sphere.geometry.attributes.position.array[i];
+            }
+            
+            // Add lighting to the scene
+            const ambientLight = new THREE.AmbientLight(0x222222);
+            scene.add(ambientLight);
+            
+            const pointLight = new THREE.PointLight(0xffffff, 1, 500);
+            pointLight.position.set(10, 20, 50);
+            scene.add(pointLight);
+
+            // Particle System Setup with brighter colors for bloom
+            particleGeometry = new THREE.BufferGeometry();
+            particlePositions = new Float32Array(PARTICLE_COUNT * 3);
+            particleColors = new Float32Array(PARTICLE_COUNT * 3);
+            initialParticlePositions = new Float32Array(PARTICLE_COUNT * 3);
+            const baseColor = new THREE.Color(0xffffff);
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const i3 = i * 3;
+                const radius = 60; // Increased from 45 to 60 to make the outer sphere larger
+                const phi = Math.acos(-1 + (2 * Math.random()));
+                const theta = Math.sqrt(PARTICLE_COUNT * Math.PI) * phi;
+                const x = radius * Math.sin(phi) * Math.cos(theta);
+                const y = radius * Math.sin(phi) * Math.sin(theta);
+                const z = radius * Math.cos(phi);
+                particlePositions[i3] = x; particlePositions[i3 + 1] = y; particlePositions[i3 + 2] = z;
+                initialParticlePositions[i3] = x; initialParticlePositions[i3 + 1] = y; initialParticlePositions[i3 + 2] = z;
+                particleColors[i3] = baseColor.r; particleColors[i3 + 1] = baseColor.g; particleColors[i3 + 2] = baseColor.b;
+            }
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+            particleGeometry.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+            particleGeometry.setAttribute('initialPosition', new THREE.BufferAttribute(initialParticlePositions, 3));
+            particleMaterial = new THREE.PointsMaterial({
+                size: BASE_PARTICLE_SIZE * 1.5, // Reduced from 1.8
+                vertexColors: true,
+                sizeAttenuation: true,
+                transparent: true,
+                opacity: 0.8
+            });
+            particles = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(particles);
+
+            // Event Listeners (same as before plus new filter controls)
+            audioInput.addEventListener('change', handleAudioFile);
+            playPauseButton.addEventListener('click', togglePlayPause);
+            stopButton.addEventListener('click', stopAudio);
+            window.addEventListener('resize', onWindowResize);
+            
+            // Set up filter controls
+            document.getElementById('filter-toggle').addEventListener('click', toggleFilter);
+            document.getElementById('filter-type').addEventListener('change', updateFilter);
+            document.getElementById('filter-frequency').addEventListener('input', updateFilter);
+            document.getElementById('filter-q').addEventListener('input', updateFilter);
+            document.getElementById('filter-auto').addEventListener('change', updateFilterAutoMode);
+            
+            // Initialize value displays
+            document.getElementById('freq-value').textContent = document.getElementById('filter-frequency').value;
+            document.getElementById('q-value').textContent = document.getElementById('filter-q').value;
+
+            // Start animation loop
+            animate();
+        }
+
+        // Set up post-processing with bloom effect
+        function setupPostProcessing() {
+            // Create effect composer
+            composer = new THREE.EffectComposer(renderer);
+            
+            // Add render pass
+            const renderPass = new THREE.RenderPass(scene, camera);
+            composer.addPass(renderPass);
+            
+            // Add bloom pass
+            bloomPass = new THREE.UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                0.8,    // Bloom strength
+                0.3,    // Radius
+                0.9     // Threshold
+            );
+            composer.addPass(bloomPass);
+        }
+
+        // --- Audio Handling ---
+        function handleAudioFile() {
+            const audioFile = audioInput.files[0];
+            if (!audioFile) {
+                nowPlayingDiv.textContent = 'No file selected.';
+                return;
+            }
+            
+            // Reset the UI state
+            loadingDiv.style.display = 'block';
+            playPauseButton.disabled = true;
+            stopButton.disabled = true;
+            
+            // Clean up previous audio if it exists
+            cleanupAudio();
+            
+            // Load the new audio file
+            loadAudio(audioFile);
+        }
+        
+        // Clean up audio resources
+        function cleanupAudio() {
+            if (audioElement) {
+                try {
+                    audioElement.pause();
+                    audioElement.src = '';
+                    audioElement.removeAttribute('src');
+                    audioElement.load();
+                } catch (e) {
+                    console.warn("Error cleaning up audio element:", e);
+                }
+            }
+            
+            // Disconnect and clean up audio nodes
+            if (source) {
+                try {
+                    source.disconnect();
+                } catch (e) {
+                    console.warn("Error disconnecting source:", e);
+                }
+                source = null;
+            }
+            
+            // Clean up Tone.js objects
+            if (toneMeter) {
+                toneMeter.dispose();
+                toneMeter = null;
+            }
+            
+            if (tonePlayer) {
+                tonePlayer.stop();
+                tonePlayer.dispose();
+                tonePlayer = null;
+            }
+            
+            if (toneFft) {
+                toneFft.dispose();
+                toneFft = null;
+            }
+            
+            if (toneBeatDetect) {
+                toneBeatDetect = null;
+            }
+            
+            audioElement = null;
+            audioPlaying = false;
+        }
+
+        async function setupAudioNodes() {
+            // Create AudioContext if it doesn't exist
+            if (!audioContext) {
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    // Tell Tone.js to use this context
+                    await Tone.setContext(audioContext);
+                    console.log("AudioContext created and set for Tone.js");
+                } catch (e) {
+                    console.error("Failed to create AudioContext:", e);
+                    alert('Web Audio API is not supported in this browser');
+                    throw new Error("AudioContext creation failed");
+                }
+            } else if (audioContext.state === 'suspended') {
+                try {
+                    await audioContext.resume();
+                    await Tone.start();
+                    console.log("AudioContext resumed");
+                } catch (e) {
+                    console.error("Failed to resume AudioContext:", e);
+                    throw new Error("Could not resume audio context");
+                }
+            }
+
+            try {
+                // Standard Web Audio API for the frequency graph
+                dataArray = new Uint8Array(FFT_SIZE);
+                bufferLength = dataArray.length;
+                
+                console.log("Audio nodes created successfully");
+                return true;
+            } catch (e) {
+                console.error("Error setting up audio nodes:", e);
+                throw new Error("Failed to set up audio processing: " + e.message);
+            }
+        }
+
+        async function loadAudio(audioFile) {
+            try {
+                loadingDiv.style.display = 'block';
+                
+                // Clean up previous audio
+                cleanupAudio();
+                
+                // Create a new Audio element (for backup/basic functionality)
+                audioElement = new Audio();
+                
+                // Create object URL for file
+                const audioURL = URL.createObjectURL(audioFile);
+                
+                // Set up event listeners for the audio element
+                audioElement.addEventListener('canplaythrough', async () => {
+                    try {
+                        // Set up the audio nodes
+                        await setupAudioNodes();
+                        
+                        // Set up Tone.js components
+                        await setupToneComponents(audioURL);
+                        
+                        // Update UI
+                        playPauseButton.disabled = false;
+                        stopButton.disabled = false;
+                        playPauseButton.textContent = 'Play';
+                        nowPlayingDiv.textContent = 'Loaded: ' + audioFile.name;
+                        
+                        console.log("Audio ready for playback");
+                        loadingDiv.style.display = 'none';
+                    } catch (error) {
+                        console.error("Setup error:", error);
+                        loadingDiv.style.display = 'none';
+                        alert("Error setting up audio: " + error.message);
+                    }
+                }, { once: true });
+                
+                // Set up error handler
+                audioElement.addEventListener('error', (e) => {
+                    console.error("Audio loading error:", e);
+                    loadingDiv.style.display = 'none';
+                    alert("Failed to load audio file.");
+                });
+                
+                // Set the source and load
+                audioElement.src = audioURL;
+                audioElement.load();
+                
+            } catch (e) {
+                console.error("Error loading audio:", e);
+                loadingDiv.style.display = 'none';
+                alert("Error loading audio: " + e.message);
+            }
+        }
+        
+        async function setupToneComponents(audioURL) {
+            try {
+                await Tone.start();
+                
+                // Create Tone.js Player for the audio file
+                tonePlayer = new Tone.Player({
+                    url: audioURL,
+                    onload: () => console.log("Tone.js Player loaded"),
+                    onerror: (e) => console.error("Tone.js Player error:", e)
+                });
+                
+                // Create filter but don't connect yet
+                toneFilter = new Tone.Filter({
+                    type: "lowpass",
+                    frequency: 1000,
+                    Q: 1,
+                    rolloff: -24
+                });
+                
+                // Create LFO for filter automation
+                toneFilterLFO = new Tone.LFO({
+                    type: "sine",
+                    min: 200,
+                    max: 5000,
+                    frequency: 0.1,
+                }).stop();
+                
+                // Create FFT analyzer - the core of our frequency analysis
+                toneFft = new Tone.FFT(FFT_SIZE);
+                
+                // Initialize dataArray for frequency data
+                // Tone.FFT returns decibel values (usually -100 to 0)
+                dataArray = new Float32Array(FFT_SIZE / 2);
+                bufferLength = dataArray.length;
+                
+                // Create meter for amplitude analysis
+                toneMeter = new Tone.Meter();
+                
+                // Connect components in a flexible way based on filter enabled state
+                updateToneGraph();
+                
+                // Custom beat detection system
+                toneBeatDetect = {
+                    threshold: 0.15,
+                    decayRate: 0.98,
+                    energyHistory: [],
+                    beatHistory: [],
+                    lastBeatTime: 0,
+                    currentBpm: 0,
+                    
+                    // Add a sample to beat detection
+                    update: function(currentTime, energy) {
+                        // Keep energy history limited
+                        if (this.energyHistory.length > 30) {
+                            this.energyHistory.shift();
+                        }
+                        
+                        this.energyHistory.push(energy);
+                        
+                        // Compute threshold from recent energy history
+                        let sum = 0;
+                        for (let i = 0; i < this.energyHistory.length; i++) {
+                            sum += this.energyHistory[i];
+                        }
+                        const avgEnergy = sum / this.energyHistory.length;
+                        const dynamicThreshold = avgEnergy * 1.2; // 20% above average
+                        
+                        // Detect a beat if energy is above threshold
+                        if (energy > Math.max(this.threshold, dynamicThreshold)) {
+                            // Only register a beat if it's been at least 100ms since the last one
+                            if (currentTime - this.lastBeatTime > 0.1) {
+                                this.beatHistory.push({time: currentTime, energy: energy});
+                                this.lastBeatTime = currentTime;
+                                
+                                // Keep beat history to a reasonable size
+                                if (this.beatHistory.length > 10) {
+                                    this.beatHistory.shift();
+                                }
+                                
+                                // Calculate BPM if we have at least 4 beats
+                                if (this.beatHistory.length >= 4) {
+                                    let intervals = [];
+                                    for (let i = 1; i < this.beatHistory.length; i++) {
+                                        intervals.push(this.beatHistory[i].time - this.beatHistory[i-1].time);
+                                    }
+                                    
+                                    // Find the average interval
+                                    const avgInterval = intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length;
+                                    this.currentBpm = Math.round(60 / avgInterval);
+                                    
+                                    // Limit BPM to a reasonable range
+                                    this.currentBpm = Math.min(Math.max(this.currentBpm, 60), 200);
+                                }
+                                
+                                return true; // Beat detected
+                            }
+                        }
+                        
+                        return false; // No beat detected
+                    },
+                    
+                    // Check if we're on beat (for visual synchronization)
+                    isOnBeat: function() {
+                        if (this.beatHistory.length === 0) return false;
+                        
+                        const now = Tone.now();
+                        const timeSinceLastBeat = now - this.lastBeatTime;
+                        
+                        // Consider "on beat" if we're within 50ms of a beat
+                        return timeSinceLastBeat < 0.05;
+                    },
+                    
+                    // Get normalized position in beat (0 to 1)
+                    getBeatProgress: function() {
+                        if (this.currentBpm <= 0 || this.beatHistory.length < 2) return 0;
+                        
+                        const beatDuration = 60 / this.currentBpm;
+                        const now = Tone.now();
+                        const timeSinceLastBeat = now - this.lastBeatTime;
+                        
+                        return Math.min(timeSinceLastBeat / beatDuration, 1);
+                    }
+                };
+                
+                console.log("Tone.js components set up successfully");
+                return true;
+            } catch (e) {
+                console.error("Error setting up Tone.js components:", e);
+                throw new Error("Failed to set up Tone.js: " + e.message);
+            }
+        }
+
+        // Function to update the audio graph connections based on filter state
+        function updateToneGraph() {
+            try {
+                // Disconnect everything first to rebuild connections
+                if (tonePlayer) {
+                    tonePlayer.disconnect();
+                }
+                if (toneFilter) {
+                    toneFilter.disconnect();
+                }
+                
+                // Ensure all components exist before attempting connections
+                if (!tonePlayer || !toneMeter || !toneFft) {
+                    console.error("Audio components not fully initialized");
+                    return;
+                }
+                
+                // Rebuild the audio graph
+                if (filterEnabled && toneFilter) {
+                    // Route through the filter - use individual connects instead of chain
+                    // which can be more reliable in Tone.js
+                    tonePlayer.connect(toneFilter);
+                    toneFilter.connect(Tone.getDestination());
+                    
+                    // Connect analyzers - connect meter to player directly
+                    tonePlayer.connect(toneMeter);
+                    
+                    // For visualization and analysis, connect after the filter
+                    // so we see the filtered spectrum
+                    toneFilter.connect(toneFft);
+                } else {
+                    // Direct connection without filter
+                    tonePlayer.connect(Tone.getDestination());
+                    
+                    // Connect analyzers to raw signal
+                    tonePlayer.connect(toneMeter);
+                    tonePlayer.connect(toneFft);
+                }
+                console.log("Audio graph updated successfully");
+            } catch (e) {
+                console.error("Error updating audio graph:", e);
+                alert("Error connecting audio components. Try reloading the page.");
+            }
+        }
+        
+        // Toggle filter on/off
+        function toggleFilter() {
+            try {
+                const filterToggle = document.getElementById('filter-toggle');
+                filterEnabled = !filterEnabled;
+                
+                if (filterEnabled) {
+                    // Make sure filter is properly initialized before enabling
+                    if (!toneFilter) {
+                        toneFilter = new Tone.Filter({
+                            type: "lowpass",
+                            frequency: 1000,
+                            Q: 1,
+                            rolloff: -24
+                        });
+                    }
+                    
+                    filterToggle.textContent = 'Disable Filter';
+                    filterToggle.classList.add('active');
+                    updateFilter(); // Apply current settings
+                } else {
+                    filterToggle.textContent = 'Enable Filter';
+                    filterToggle.classList.remove('active');
+                    
+                    // Turn off any automation
+                    if (toneFilterLFO) {
+                        toneFilterLFO.stop();
+                    }
+                }
+                
+                // Update connections
+                updateToneGraph();
+            } catch (e) {
+                console.error("Error toggling filter:", e);
+                alert("Error with filter. Try reloading the page.");
+            }
+        }
+        
+        // Update filter parameters
+        function updateFilter() {
+            if (!toneFilter) return;
+            
+            const type = document.getElementById('filter-type').value;
+            const frequency = parseFloat(document.getElementById('filter-frequency').value);
+            const Q = parseFloat(document.getElementById('filter-q').value);
+            
+            toneFilter.type = type;
+            toneFilter.frequency.value = frequency;
+            toneFilter.Q.value = Q;
+            
+            // Update display values
+            document.getElementById('freq-value').textContent = frequency;
+            document.getElementById('q-value').textContent = Q;
+            
+            // If auto mode is on, update automation parameters
+            updateFilterAutoMode(true);
+        }
+        
+        // Set up filter automation
+        function updateFilterAutoMode(keepCurrentMode = false) {
+            if (!toneFilter || !toneFilterLFO) return;
+            
+            if (!keepCurrentMode) {
+                filterAutoMode = document.getElementById('filter-auto').value;
+            }
+            
+            // Stop any previous automation
+            toneFilterLFO.stop();
+            toneFilterLFO.disconnect();
+            
+            if (!filterEnabled) return;
+            
+            const baseFreq = parseFloat(document.getElementById('filter-frequency').value);
+            
+            switch (filterAutoMode) {
+                case "lfo":
+                    // Set up LFO for filter sweeping
+                    toneFilterLFO.type = "sine";
+                    toneFilterLFO.min = baseFreq * 0.5;
+                    toneFilterLFO.max = baseFreq * 2;
+                    toneFilterLFO.frequency.value = 0.2;
+                    toneFilterLFO.connect(toneFilter.frequency);
+                    toneFilterLFO.start();
+                    break;
+                    
+                case "beat":
+                    // Beat-synced mode will be handled in the animation loop
+                    // We'll update the filter there based on beat detection
+                    break;
+                    
+                case "follow":
+                    // Frequency follow mode will be handled in the animation loop
+                    // We'll update the filter based on dominant frequency
+                    break;
+                    
+                default:
+                    // No automation
+                    toneFilter.frequency.value = baseFreq;
+                    break;
+            }
+        }
+
+        async function togglePlayPause() {
+            if (!tonePlayer) {
+                alert("No audio loaded. Please select a file first.");
+                return;
+            }
+
+            try {
+                // Start Tone.js context
+                await Tone.start();
+                
+                if (audioPlaying) {
+                    tonePlayer.stop();
+                    audioPlaying = false;
+                    playPauseButton.textContent = 'Play';
+                } else {
+                    tonePlayer.start();
+                    audioPlaying = true;
+                    playPauseButton.textContent = 'Pause';
+                }
+            } catch (e) {
+                console.error("Playback error:", e);
+                alert("Error playing audio: " + e.message);
+            }
+        }
+
+        function stopAudio() {
+            if (!tonePlayer) return;
+            tonePlayer.stop();
+            audioPlaying = false;
+            playPauseButton.textContent = 'Play';
+        }
+
+        // --- Visualization (Enhanced) ---
+        function drawFrequencyGraph() {
+            if (!toneFft || !dataArray || !freqCtx) return;
+            const width = freqCanvas.width;
+            const height = freqCanvas.height;
+            freqCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            freqCtx.fillRect(0, 0, width, height);
+
+            if (!audioPlaying) {
+                 freqCtx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                 freqCtx.beginPath(); freqCtx.moveTo(0, height -1); freqCtx.lineTo(width, height -1); freqCtx.stroke();
+                 return;
+            }
+
+            // Get frequency data from Tone.FFT
+            const fftValues = toneFft.getValue();
+            
+            const barWidth = (width / bufferLength);
+            let x = 0;
+            const bassEndIndex = Math.floor(bufferLength * 0.15);
+            const trebleStartIndex = Math.floor(bufferLength * 0.5);
+
+            for (let i = 0; i < bufferLength; i++) {
+                // Convert from decibels (-100 to 0) to normalized values (0 to 1)
+                // -100dB is silence, 0dB is maximum loudness
+                const dbValue = fftValues[i];
+                const normalizedValue = (dbValue + 100) / 100; // Convert -100...0 to 0...1
+                const barHeight = normalizedValue * height * 0.9;
+                
+                if (i <= bassEndIndex) { 
+                    freqCtx.fillStyle = `rgb(50, 50, ${150 + normalizedValue * 100})`; 
+                } else if (i >= trebleStartIndex) { 
+                    freqCtx.fillStyle = `rgb(${150 + normalizedValue * 100}, 50, 50)`; 
+                } else { 
+                    freqCtx.fillStyle = `rgb(50, ${150 + normalizedValue * 100}, 50)`; 
+                }
+                
+                freqCtx.fillRect(x, height - barHeight, barWidth - 1, barHeight);
+                x += barWidth;
+            }
+        }
+        
+        // --- Enhanced Audio Analysis for Animation ---
+        function getAudioData() {
+            if (!toneFft || !audioPlaying) {
+                return {
+                    bass: 0,
+                    mids: 0,
+                    treble: 0,
+                    volume: 0,
+                    isBeat: false,
+                    beatProgress: 0,
+                    bpm: 0
+                };
+            }
+            
+            // Get frequency data from Tone.FFT
+            const fftValues = toneFft.getValue();
+            
+            // Calculate frequency bands from Tone.FFT's decibel values
+            const bassEndIndex = Math.floor(bufferLength * 0.15);
+            const trebleStartIndex = Math.floor(bufferLength * 0.5);
+            
+            let bassSum = 0;
+            let midsSum = 0;
+            let trebleSum = 0;
+            
+            // Calculate average energy to determine if audio is actually playing
+            let totalEnergy = 0;
+            
+            for (let i = 0; i < bufferLength; i++) {
+                // Convert from decibels (-100 to 0) to normalized values (0 to 1)
+                // Apply a threshold to ignore very quiet sounds (-80dB and below)
+                const dbValue = fftValues[i];
+                let normalizedValue = 0;
+                
+                // Only consider values above -80dB as actual audio
+                if (dbValue > -80) {
+                    normalizedValue = (dbValue + 100) / 100; // Convert -100...0 to 0...1
+                }
+                
+                totalEnergy += normalizedValue;
+                
+                if (i <= bassEndIndex) {
+                    bassSum += normalizedValue;
+                } else if (i >= trebleStartIndex) {
+                    trebleSum += normalizedValue;
+                } else {
+                    midsSum += normalizedValue;
+                }
+            }
+            
+            // Check if there's significant audio before processing
+            const avgEnergy = totalEnergy / bufferLength;
+            const hasSignificantAudio = avgEnergy > 0.05; // Threshold to consider as real audio
+            
+            // Calculate averages
+            const bass = hasSignificantAudio ? bassSum / (bassEndIndex + 1) : 0;
+            const mids = hasSignificantAudio ? midsSum / (trebleStartIndex - bassEndIndex - 1) : 0;
+            const treble = hasSignificantAudio ? trebleSum / (bufferLength - trebleStartIndex) : 0;
+            
+            // Calculate overall volume using Tone.Meter
+            let volume = 0;
+            if (toneMeter) {
+                // Convert from decibels to normalized value
+                const dbValue = toneMeter.getValue();
+                
+                // Only consider values above a threshold
+                if (dbValue > -70) {
+                    volume = (dbValue + 100) / 100; // Normalize roughly from -100dB to 0dB
+                    volume = Math.max(0, Math.min(1, volume)); // Clamp between 0 and 1
+                }
+            }
+            
+            // Beat detection using our custom system with Tone.js timing
+            let isBeat = false;
+            let beatProgress = 0;
+            let bpm = 0;
+            
+            if (toneBeatDetect && hasSignificantAudio) {
+                isBeat = toneBeatDetect.update(Tone.now(), bass);
+                beatProgress = toneBeatDetect.getBeatProgress();
+                bpm = toneBeatDetect.currentBpm;
+                
+                // Show BPM on UI if available
+                if (bpm > 0 && document.getElementById('bpmDisplay')) {
+                    document.getElementById('bpmDisplay').textContent = `BPM: ${bpm}`;
+                }
+            }
+            
+            // For filter effects
+            let dominantFrequency = 0;
+            
+            if (audioPlaying && hasSignificantAudio) {
+                // Find the dominant frequency band for filter follow mode
+                let maxEnergy = -100;
+                let maxIndex = 0;
+                
+                for (let i = 1; i < bufferLength; i++) { // Skip the DC component
+                    if (fftValues[i] > maxEnergy) {
+                        maxEnergy = fftValues[i];
+                        maxIndex = i;
+                    }
+                }
+                
+                // Approximate the frequency from the bin index
+                // This is a simplified calculation
+                dominantFrequency = (maxIndex / bufferLength) * (audioContext.sampleRate / 2);
+            }
+            
+            // Update filter automation based on mode
+            if (filterEnabled && toneFilter) {
+                if (filterAutoMode === "beat" && isBeat) {
+                    // Beat-triggered filter sweep
+                    const baseFreq = parseFloat(document.getElementById('filter-frequency').value);
+                    toneFilter.frequency.cancelScheduledValues(Tone.now());
+                    toneFilter.frequency.setValueAtTime(baseFreq * 3, Tone.now());
+                    toneFilter.frequency.exponentialRampToValueAtTime(
+                        baseFreq, 
+                        Tone.now() + 0.3
+                    );
+                } else if (filterAutoMode === "follow" && dominantFrequency > 0) {
+                    // Follow dominant frequency with some smoothing
+                    toneFilter.frequency.rampTo(
+                        Math.max(50, Math.min(10000, dominantFrequency)),
+                        0.1
+                    );
+                }
+            }
+            
+            return {
+                bass,
+                mids,
+                treble,
+                volume,
+                isBeat,
+                beatProgress,
+                bpm,
+                hasSignificantAudio,
+                dominantFrequency
+            };
+        }
+        
+        function updateAverageLabels(bassAvg, midsAvg, trebleAvg) {
+             if (!avgLabelsDiv) return;
+             avgLabelsDiv.textContent = `Avg: Bass: ${bassAvg.toFixed(2)} | Mids: ${midsAvg.toFixed(2)} | Treble: ${trebleAvg.toFixed(2)}`;
+             
+             // Add beat and BPM display if not already present
+             if (!document.getElementById('bpmDisplay')) {
+                 const bpmElement = document.createElement('div');
+                 bpmElement.id = 'bpmDisplay';
+                 bpmElement.textContent = 'BPM: --';
+                 avgLabelsDiv.appendChild(bpmElement);
+             }
+        }
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Get audio data with Tone.js enhancements
+            const audioData = getAudioData();
+            
+            // Draw the frequency graph
+            drawFrequencyGraph();
+            
+            // Update labels
+            updateAverageLabels(audioData.bass, audioData.mids, audioData.treble);
+            
+            // Animation timing
+            const time = Date.now() * 0.0005;
+            
+            // Only animate when there's significant audio
+            const animationActive = audioPlaying && audioData.hasSignificantAudio;
+            
+            // Update bloom based on audio
+            if (bloomPass) {
+                if (animationActive) {
+                    // EXTREME: Make bloom dramatically more intense with explosive peaks
+                    if (audioData.isBeat) {
+                        bloomPass.strength = 2.5 + audioData.treble * 3.5; // Dramatically increased from 1.5+2.5 to 2.5+3.5
+                        bloomPass.radius = 0.7 + audioData.treble * 1.0;  // Dramatically increased from 0.5+0.6 to 0.7+1.0
+                        bloomPass.threshold = Math.max(0.02, 0.4 - audioData.treble * 0.4); // Lower threshold for more glow
+                    } else {
+                        // Normal active bloom with treble influence - enhanced
+                        bloomPass.strength = 1.2 + audioData.treble * 2.5; // Increased from 0.8+1.5 to 1.2+2.5
+                        bloomPass.radius = 0.4 + audioData.treble * 0.6; // Increased from 0.3+0.3 to 0.4+0.6
+                        bloomPass.threshold = Math.max(0.05, 0.5 - audioData.treble * 0.5); // Lower threshold
+                    }
+                } else {
+                    // Subtle bloom when inactive - slightly enhanced
+                    bloomPass.strength = 0.8; // Increased from 0.5 to 0.8
+                    bloomPass.radius = 0.4; // Increased from 0.3 to 0.4
+                    bloomPass.threshold = 0.7; // Reduced from 0.8 to 0.7 for more glow even when inactive
+                }
+            }
+            
+            // SPHERE ANIMATION
+            if (sphere) {
+                // Apply subtle base rotation even without audio
+                sphere.rotation.x += 0.0005;
+                sphere.rotation.y += 0.001;
+                
+                if (animationActive) {
+                    // Enhanced rotation based on audio frequencies
+                    sphere.rotation.x += audioData.treble * 0.05;
+                    sphere.rotation.y += audioData.mids * 0.05;
+                    
+                    // Pulse size on beats
+                    if (audioData.isBeat) {
+                        // SUPER-ENHANCED: Much more dramatic scaling on beats for extreme impact
+                        const beatScale = 1 + audioData.bass * 2.5; // Increased from 1.2 to 2.5
+                        sphere.scale.set(beatScale, beatScale, beatScale);
+                        
+                        // Create a smooth color transition from white to yellow to light red
+                        // based on audio intensity (primarily bass and volume)
+                        const intensity = audioData.bass * 0.7 + audioData.volume * 0.3;
+                        
+                        // Start with white, transition to yellow, then to light red
+                        // as intensity increases
+                        let r = 0.9 + intensity * 0.1; // Always high (near white to red)
+                        let g = 0.9 - intensity * 0.7; // Decreases as we move to red
+                        let b = 0.9 - intensity * 0.8; // Decreases faster for more yellow/red
+                        
+                        sphere.material.color.setRGB(r, g, b);
+                        
+                        // ENHANCED: Stronger emissive glow effect
+                        const emissiveIntensity = intensity * 1.2; // Increased from 0.7 to 1.2
+                        sphere.material.emissive.setRGB(
+                            emissiveIntensity * 0.8, // Red emission
+                            emissiveIntensity * 0.5 * (1 - intensity), // Yellow fades as we get more intense
+                            emissiveIntensity * 0.2 * (1 - intensity)  // Minimal blue
+                        );
+                        
+                        // Make wireframe thicker on beats
+                        sphere.material.wireframeLinewidth = 2 + audioData.bass * 6; // Increased from 3 to 6
+                    } else {
+                        // Return to normal size based on beat progress
+                        // SUPER-ENHANCED: Much more dramatic pulsing between beats
+                        const scale = 1 + (audioData.bass * 1.6 * (1 - audioData.beatProgress)); // Increased from 0.8 to 1.6
+                        sphere.scale.set(scale, scale, scale);
+                    }
+                    
+                    // Deform the sphere based on audio
+                    if (sphereVertices && sphere.geometry) {
+                        const vertices = sphere.geometry.attributes.position;
+                        
+                        // WAVE-SIMULATION: Create dramatic wave formations on the sphere surface
+                        // Based on multiple superimposed wave systems with different frequencies
+                        
+                        // Create global time-based wave phases
+                        const wavePhase1 = time * 2.0;
+                        const wavePhase2 = time * 1.5;
+                        const wavePhase3 = time * 0.8;
+                        
+                        for (let i = 0; i < vertices.count; i++) {
+                            const x = sphereVertices[i * 3];
+                            const y = sphereVertices[i * 3 + 1];
+                            const z = sphereVertices[i * 3 + 2];
+                            
+                            // Calculate spherical coordinates for position-dependent waves
+                            const r = Math.sqrt(x * x + y * y + z * z);
+                            const theta = Math.atan2(y, x);
+                            const phi = Math.acos(z / r);
+                            
+                            // Create multiple wave systems for complex deformations
+                            
+                            // System 1: Longitudinal waves (varies with phi)
+                            const longFreq = 4.0 + audioData.treble * 6.0; // More rings with higher treble
+                            const longAmp = audioData.treble * 0.5;
+                            const longWave = Math.sin(phi * longFreq + wavePhase1) * longAmp;
+                            
+                            // System 2: Latitudinal waves (varies with theta)
+                            const latFreq = 5.0 + audioData.mids * 4.0;
+                            const latAmp = audioData.mids * 0.6;
+                            const latWave = Math.sin(theta * latFreq + wavePhase2) * latAmp;
+                            
+                            // System 3: Radial pulsation with ripple effect
+                            const radialAmp = audioData.bass * 0.7; // Strong bass creates stronger pulsation
+                            const radialFreq = 3.0 + audioData.bass * 2.0;
+                            const radialWave = Math.sin(phi * radialFreq + theta * 2.0 + wavePhase3) * radialAmp;
+                            
+                            // Combine all wave systems for complex surface
+                            const totalDeformation = (1.0 + longWave + latWave) * (1.0 + radialWave);
+                            
+                            // Add extra deformation on beats for dramatic effect
+                            let beatEffect = 0;
+                            if (audioData.isBeat) {
+                                const beatProgress = audioData.beatProgress * Math.PI * 2;
+                                // Create rippling wave that travels across sphere on beats
+                                beatEffect = Math.sin(phi * 8.0 - beatProgress) * Math.sin(theta * 6.0 - beatProgress) * audioData.bass * 0.5;
+                            }
+                            
+                            // Apply combined deformation
+                            vertices.setXYZ(
+                                i,
+                                x * (totalDeformation + beatEffect),
+                                y * (totalDeformation + beatEffect),
+                                z * (totalDeformation + beatEffect)
+                            );
+                        }
+                        vertices.needsUpdate = true;
+                        sphere.geometry.computeVertexNormals();
+                    }
+                } else {
+                    // Reset to default state when not active
+                    sphere.scale.set(1, 1, 1);
+                    if (sphere.material) {
+                        sphere.material.color.setRGB(1, 1, 1);
+                        sphere.material.emissive.setRGB(0.1, 0.1, 0.1);
+                    }
+                    
+                    // Reset sphere shape
+                    if (sphereVertices && sphere.geometry) {
+                        const vertices = sphere.geometry.attributes.position;
+                        for (let i = 0; i < vertices.count; i++) {
+                            vertices.setXYZ(
+                                i,
+                                sphereVertices[i * 3],
+                                sphereVertices[i * 3 + 1],
+                                sphereVertices[i * 3 + 2]
+                            );
+                        }
+                        vertices.needsUpdate = true;
+                        sphere.geometry.computeVertexNormals();
+                    }
+                }
+            }
+            
+            // PARTICLE ANIMATION
+            if (particles && particleGeometry) {
+                // Always have a baseline small particle size
+                particleMaterial.size = BASE_PARTICLE_SIZE * 0.8; // Reduced from 1.0
+                particleMaterial.opacity = 0.5;
+                
+                if (animationActive) {
+                    // Update particle size based on audio and beat - DRAMATICALLY increased
+                    const baseSize = BASE_PARTICLE_SIZE * 1.5; // Increased from 1.0 to 1.5
+                    particleMaterial.size = audioData.isBeat ? 
+                        baseSize + audioData.volume * 4.0 : // Doubled from 2.0 to 4.0 for explosive growth on beats
+                        baseSize + audioData.volume * 2.0; // Doubled from 1.0 to 2.0
+                    
+                    // Update particle opacity based on beat - enhanced
+                    particleMaterial.opacity = audioData.isBeat ? 
+                        Math.min(1.0, 0.9 + audioData.bass * 0.6) : // Increased from 0.8+0.5 to 0.9+0.6
+                        0.9; // Increased from 0.8 to 0.9
+                }
+                
+                const positions = particleGeometry.attributes.position.array;
+                const colors = particleGeometry.attributes.color.array;
+                const initialPos = particleGeometry.attributes.initialPosition.array;
+                
+                // Detect music energy/mood based on audio characteristics
+                const energy = (audioData.bass * 0.4) + (audioData.treble * 0.3) + (audioData.volume * 0.3);
+                const tempoFactor = audioData.bpm > 100 ? 1.0 : 0.5; // Fast tempo = more colorful
+                const moodFactor = energy * tempoFactor;
+                
+                // Generate wave points on strong beats
+                if (audioData.isBeat && audioData.bass > 0.5) {
+                    // Create vortex center point
+                    const vortexAngle = Math.random() * Math.PI * 2;
+                    const vortexRadius = Math.random() * 25;
+                    
+                    // Store vortex information in global array if it doesn't exist
+                    if (!window.vortexPoints) {
+                        window.vortexPoints = [];
+                    }
+                    
+                    // Only add new vortex if bass is strong enough
+                    // METAL: Create more vortices with even lower threshold
+                    if (audioData.bass > 0.45) { // Reduced from 0.5 to 0.45 for more frequent vortices
+                        // Add new vortex with METAL-ENHANCED strength and radius
+                        window.vortexPoints.push({
+                            x: Math.cos(vortexAngle) * vortexRadius,
+                            y: Math.sin(vortexAngle) * vortexRadius,
+                            z: (Math.random() - 0.5) * 20, // Increased z-spread from 15 to 20
+                            // METAL-ENHANCED: Brutal vortex strength for chaotic metal music
+                            strength: 40 + audioData.bass * 80, // Dramatically increased from 30+60 to 40+80
+                            decay: 0.99 + audioData.treble * 0.01, // Even slower decay (0.98->0.99) for much longer lifetime
+                            // METAL-ENHANCED: Massive effect radius for wide-area impact
+                            radius: 60 + audioData.bass * 50, // Dramatically increased from 45+35 to 60+50
+                            life: 1.0 // Initial life (will decay)
+                        });
+                    }
+                    
+                    // Cap the number of active vortices - INCREASED from 6 to 8 for more chaotic motion
+                    if (window.vortexPoints.length > 8) {
+                        window.vortexPoints.shift();
+                    }
+                }
+                
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    const i3 = i * 3;
+                    
+                    // Get initial position
+                    const initialX = initialPos[i3];
+                    const initialY = initialPos[i3 + 1];
+                    const initialZ = initialPos[i3 + 2];
+                    
+                    if (animationActive) {
+                        // Base explosion factor - pulsing sphere
+                        // METAL-ENHANCED: Extreme expansion for metal music
+                        let explosionFactor = 1.0 + audioData.bass * 3.5; // Increased from 2.0 to 3.5
+                        
+                        // METAL-ENHANCED: Explosive expansion on beats
+                        if (audioData.isBeat) {
+                            explosionFactor += audioData.bass * 3.0; // Increased from 1.8 to 3.0
+                        }
+                        
+                        // METAL-ENHANCED: Extreme energy scaling for metal songs
+                        const energyScaling = energy * 1.5; // Increased from 1.0 to 1.5
+                        explosionFactor *= (1.0 + energyScaling);
+                        
+                        // Start with base position
+                        let x = initialX * explosionFactor;
+                        let y = initialY * explosionFactor;
+                        let z = initialZ * explosionFactor;
+                        
+                        // Apply pattern-based motion depending on particle index
+                        // Different particle groups have different behaviors
+                        
+                        // Group particles into 3 main groups
+                        const particleGroup = Math.floor(i / (PARTICLE_COUNT / 3));
+                        
+                        if (particleGroup === 0) {
+                            // GROUP 1: Vortex influenced particles (dramatic spiral motion)
+                            if (window.vortexPoints && window.vortexPoints.length > 0) {
+                                for (const vortex of window.vortexPoints) {
+                                    // Calculate distance to vortex center
+                                    const dx = x - vortex.x;
+                                    const dy = y - vortex.y;
+                                    const dz = z - vortex.z;
+                                    const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                                    
+                                    if (distance < vortex.radius) {
+                                        // Calculate influence factor based on distance and vortex life
+                                        // METAL: Extreme influence for violent metal-style spiral motion
+                                        const influence = (1 - (distance / vortex.radius)) * vortex.life * 2.2; // Increased from 1.5 to 2.2
+                                        const angle = Math.atan2(dy, dx) + (influence * 0.6); // INCREASED from 0.4 to 0.6
+                                        
+                                        // Create spiral motion
+                                        // METAL: Extreme spiral strength for violent metal-style motion
+                                        const spiralFactor = influence * vortex.strength * 1.8; // Increased from 1.2 to 1.8
+                                        const spiralRadius = distance * (1 - influence * 0.7); // INCREASED from 0.5 to 0.7
+                                        
+                                        // Add turbulence for more chaotic metal-style motion
+                                        const turbX = (Math.random() - 0.5) * audioData.bass * 8.0;
+                                        const turbY = (Math.random() - 0.5) * audioData.bass * 8.0;
+                                        const turbZ = (Math.random() - 0.5) * audioData.bass * 8.0;
+                                        
+                                        x = vortex.x + Math.cos(angle) * spiralRadius + turbX;
+                                        y = vortex.y + Math.sin(angle) * spiralRadius + turbY;
+                                        z = vortex.z + dz * (1 - influence * 0.9) + turbZ; // INCREASED from 0.8 to 0.9
+                                    }
+                                }
+                            }
+                            
+                            // Add complex 3D fluid motion - inspired by Perlin noise patterns
+                            // EXTREME-WAVE: Even higher amplitude and faster time scale for more prominent waves
+                            const timeScale = time * 6.0; // Dramatically increased from 4.5 to 6.0
+                            const noisePeriod = 3.2 + audioData.treble * 5.0; // Reduced from 4.0 to 3.2 for faster, tighter waves
+                            // EXTREME-WAVE: Higher amplitude for much more prominent wave motion
+                            const noiseAmplitude = 18.0 + audioData.mids * 35.0; // Dramatically increased from 12.0+25.0 to 18.0+35.0
+                            
+                            // Add secondary overlapping wave system for more complex fluid patterns - enhanced
+                            const timeScale2 = time * 4.5; // Increased from 3.2 to 4.5
+                            const noisePeriod2 = 4.2 + audioData.bass * 4.0; // Decreased from 5.0 to 4.2, increased bass influence
+                            const noiseAmplitude2 = 12.0 + audioData.bass * 28.0; // Increased from 8.0+18.0 to 12.0+28.0
+                            
+                            // Create fluid motion using sine waves at different phases and directions
+                            // This creates interference patterns similar to fluid dynamics
+                            x += Math.sin(y/noisePeriod + timeScale) * 
+                                 Math.cos(z/noisePeriod + timeScale) * noiseAmplitude +
+                                 Math.cos(y/noisePeriod2 + timeScale2) * noiseAmplitude2 * 0.6; // Increased from 0.4 to 0.6
+                            
+                            y += Math.sin(z/noisePeriod + timeScale + 1.3) * 
+                                 Math.cos(x/noisePeriod + timeScale) * noiseAmplitude +
+                                 Math.sin(z/noisePeriod2 + timeScale2 + 2.1) * noiseAmplitude2 * 0.6; // Increased from 0.4 to 0.6
+                            
+                            z += Math.sin(x/noisePeriod + timeScale + 2.6) * 
+                                 Math.cos(y/noisePeriod + timeScale + 0.7) * noiseAmplitude +
+                                 Math.cos(x/noisePeriod2 + timeScale2 + 1.7) * noiseAmplitude2 * 0.6; // Increased from 0.4 to 0.6
+                        } else if (particleGroup === 1) {
+                            // GROUP 2: Multi-directional wave system (combined horizontal and vertical waves)
+                            
+                            // Create multiple wave systems that interact with each other
+                            // Wave system 1: Horizontal radial waves (circular waves emanating outward)
+                            const radialDistance = Math.sqrt(x*x + z*z); // Distance from center in xz plane
+                            const radialWaveFreq = 0.12 + audioData.bass * 0.1; // Increased from 0.08 to 0.12 for more defined waves
+                            const radialWaveSpeed = time * 3.8; // Increased from 2.5 to 3.8 for more rapid motion
+                            // EXTREME-WAVE: Much higher wave height for more prominent waves
+                            const radialWaveHeight = audioData.bass * 45; // Dramatically increased from 30 to 45
+                            
+                            // Radial wave emanating outward in the xz plane
+                            const radialWave = Math.sin(radialDistance * radialWaveFreq - radialWaveSpeed) * radialWaveHeight;
+                            
+                            // Wave system 2: Vertical planar waves along x-axis
+                            const xWaveFreq = 0.16 + audioData.mids * 0.12; // Increased from 0.12 to 0.16 for more defined waves
+                            const xWaveSpeed = time * 2.8; // Increased from 1.9 to 2.8 for faster waves
+                            // EXTREME-WAVE: Much higher wave height for more prominent waves
+                            const xWaveHeight = audioData.mids * 38; // Dramatically increased from 25 to 38
+                            const xWave = Math.sin(x * xWaveFreq - xWaveSpeed) * xWaveHeight;
+                            
+                            // Wave system 3: Vertical planar waves along z-axis
+                            const zWaveFreq = 0.2 + audioData.treble * 0.1; // Increased from 0.15 to 0.2 for more defined waves
+                            const zWaveSpeed = time * 3.2; // Increased from 2.2 to 3.2 for faster waves
+                            // EXTREME-WAVE: Much higher wave height for more prominent waves
+                            const zWaveHeight = audioData.treble * 32; // Dramatically increased from 20 to 32
+                            const zWave = Math.sin(z * zWaveFreq - zWaveSpeed) * zWaveHeight;
+                            
+                            // EXTREME-WAVE: Enhance third layer of waves for extreme complexity and prominence
+                            const thirdRadialFreq = 0.09 + audioData.treble * 0.06; // Increased from 0.06 to 0.09
+                            const thirdRadialSpeed = time * 2.6; // Increased from 1.8 to 2.6
+                            const thirdRadialHeight = audioData.treble * 25; // Increased from 15 to 25
+                            const thirdRadialWave = Math.cos(radialDistance * thirdRadialFreq - thirdRadialSpeed) * thirdRadialHeight;
+                            
+                            // EXTREME-WAVE: Enhance second layer of waves for more complex, prominent patterns
+                            const secondRadialFreq = 0.06 + audioData.bass * 0.08; // Increased from 0.04 to 0.06
+                            const secondRadialSpeed = time * 2.3; // Increased from 1.6 to 2.3
+                            const secondRadialHeight = audioData.bass * 24; // Increased from 15 to 24
+                            const secondRadialWave = Math.cos(radialDistance * secondRadialFreq - secondRadialSpeed) * secondRadialHeight;
+                            
+                            // Combine all wave systems with higher influence factors
+                            y += radialWave + secondRadialWave * 1.2 + thirdRadialWave * 1.0; // Increased from 0.9+0.7 to 1.2+1.0
+                            
+                            // Apply planar waves - these create a grid pattern
+                            // EXTREME-WAVE: Much higher cross-influence for extreme wave interactions
+                            x += zWave * 1.1 + radialWave * 0.3; // Increased from 0.8+0.2 to 1.1+0.3
+                            z += xWave * 1.1 + secondRadialWave * 0.3; // Increased from 0.8+0.2 to 1.1+0.3
+                            
+                            // EXTREME-WAVE: Super aggressive vertical wave that follows treble
+                            const verticalWavePhase = time * 5.5; // Increased from 4.0 to 5.5 for faster, more defined waves
+                            // EXTREME-WAVE: Dramatically increased amplitude for extremely prominent waves
+                            y += Math.sin(verticalWavePhase + (x + z) * 0.08) * audioData.treble * 50; // Increased from 35 to 50
+                            
+                            // Add outward explosion on beats
+                            if (audioData.isBeat) {
+                                const angle = Math.atan2(y, x);
+                                const angle2 = Math.atan2(z, Math.sqrt(x*x + y*y));
+                                
+                                // 3D explosion in all directions
+                                // EXTREME-WAVE: Even more extreme force for explosive wave patterns
+                                const outwardForce = audioData.bass * 60; // Dramatically increased from 45 to 60
+                                x += Math.cos(angle) * Math.cos(angle2) * outwardForce;
+                                y += Math.sin(angle) * Math.cos(angle2) * outwardForce;
+                                z += Math.sin(angle2) * outwardForce;
+                                
+                                // Add chaos for explosive wave patterns
+                                x += (Math.random() - 0.5) * audioData.bass * 20; // Increased from 15 to 20
+                                y += (Math.random() - 0.5) * audioData.bass * 20; // Increased from 15 to 20
+                                z += (Math.random() - 0.5) * audioData.bass * 20; // Increased from 15 to 20
+                            }
+                            
+                            // Add aggressive swirling currents that follow the beat pattern
+                            const swirlPhase = audioData.beatProgress * Math.PI * 4.0; // Increased from 3.0 to 4.0
+                            // EXTREME-WAVE: Much stronger swirl for more prominent wave patterns
+                            const swirlStrength = audioData.mids * 20; // Dramatically increased from 15 to 20
+                            
+                            // Create swirl effect in the xz plane
+                            const swirlX = x * Math.cos(swirlPhase) - z * Math.sin(swirlPhase);
+                            const swirlZ = x * Math.sin(swirlPhase) + z * Math.cos(swirlPhase);
+                            
+                            // Blend original position with swirled position
+                            // EXTREME-WAVE: Stronger swirl influence
+                            const swirlInfluence = swirlStrength/8; // Increased from swirlStrength/10 to swirlStrength/8
+                            x = x * (1 - swirlInfluence) + swirlX * swirlInfluence;
+                            z = z * (1 - swirlInfluence) + swirlZ * swirlInfluence;
+                        } else {
+                            // GROUP 3: Dynamic orbital systems with fluid interactions
+                            
+                            // Create several orbital layers with different behaviors
+                            const subShell = i % 5;
+                            // METAL: Extreme distance between orbital shells for more chaotic look
+                            const shellRadius = 35 + subShell * 12; // Increased from 30+8 to 35+12
+                            // METAL: Faster orbital speeds for more intense motion
+                            const shellSpeed = 0.5 + subShell * 0.25; // Increased from 0.3+0.15 to 0.5+0.25
+                            
+                            // Orbital rotation angles with dynamic changes based on audio
+                            // METAL: Much faster rotation speed
+                            const orbitAngleX = time * shellSpeed * 1.2 + (i * 0.02); // Increased from 0.8 to 1.2
+                            const orbitAngleY = time * shellSpeed * 0.9 + (i * 0.02); // Increased from 0.5 to 0.9
+                            const orbitAngleZ = time * shellSpeed * 0.7 + (i * 0.02); // Increased from 0.3 to 0.7
+                            
+                            // Add chaotic wobble for metal music intensity
+                            const metalWobble = audioData.bass > 0.7 ? Math.sin(i * 0.05 + time * 5) * audioData.bass * 0.5 : 0;
+                            
+                            // Calculate position on the orbital shell with normalization
+                            const distFromCenter = Math.sqrt(x*x + y*y + z*z);
+                            const normalizedX = x / distFromCenter;
+                            const normalizedY = y / distFromCenter;
+                            const normalizedZ = z / distFromCenter;
+                            
+                            // Use 3D rotation matrices for more complex orbital paths
+                            // Rotation around X axis with metal-enhanced wobble
+                            let rotX = normalizedX;
+                            let rotY = normalizedY * Math.cos(orbitAngleX + metalWobble) - normalizedZ * Math.sin(orbitAngleX + metalWobble);
+                            let rotZ = normalizedY * Math.sin(orbitAngleX + metalWobble) + normalizedZ * Math.cos(orbitAngleX + metalWobble);
+                            
+                            // Rotation around Y axis with metal-enhanced wobble
+                            const tempX = rotX * Math.cos(orbitAngleY + metalWobble) + rotZ * Math.sin(orbitAngleY + metalWobble);
+                            const tempZ = -rotX * Math.sin(orbitAngleY + metalWobble) + rotZ * Math.cos(orbitAngleY + metalWobble);
+                            rotX = tempX;
+                            rotZ = tempZ;
+                            
+                            // Rotation around Z axis with audio influence
+                            // METAL: Higher treble influence for extreme chaotic motion
+                            const finalX = rotX * Math.cos(orbitAngleZ * audioData.treble * 0.8) - rotY * Math.sin(orbitAngleZ * audioData.treble * 0.8);
+                            const finalY = rotX * Math.sin(orbitAngleZ * audioData.treble * 0.8) + rotY * Math.cos(orbitAngleZ * audioData.treble * 0.8);
+                            
+                            // Apply rotation and shell radius with audio-reactive modulation
+                            // METAL: Higher mids influence for more extreme orbital fluctuations
+                            const shellFactor = shellRadius * (1 + audioData.mids * 0.6); // Increased from 0.3 to 0.6
+                            
+                            // Add wobble to the orbital paths based on bass
+                            // METAL: Higher wobble amount for extreme metal-style bass response
+                            const wobbleAmt = audioData.bass * 0.4; // Increased from 0.2 to 0.4
+                            const wobbleFreq = 6.0 + subShell * 0.8; // Increased from 4.0 to 6.0
+                            const wobble = 1.0 + Math.sin(time * wobbleFreq + i * 0.1) * wobbleAmt;
+                            
+                            // METAL: Add chaotic pulse on beats for metal rhythm response
+                            const beatPulse = audioData.isBeat ? audioData.bass * 0.5 : 0;
+                            
+                            // Calculate final position with orbital path and wobble
+                            x = finalX * shellFactor * wobble * (1 + beatPulse);
+                            y = finalY * shellFactor * wobble * (1 + beatPulse);
+                            z = rotZ * shellFactor * wobble * (1 + beatPulse);
+                            
+                            // Add fluid interactions between orbital particles
+                            if (audioData.treble > 0.4) { // Lowered from 0.5 to trigger more frequently
+                                // Add treble-driven radial wave pattern
+                                // METAL: Higher wave amplitude and frequency for extreme turbulence
+                                const radialWave = Math.sin(distFromCenter * 0.08 + time * 3.5) * audioData.treble * 12; // Increased from 0.05*2 to 0.08*3.5 and 6 to 12
+                                const radialDir = new THREE.Vector3(x, y, z).normalize();
+                                
+                                // Add chaotic turbulence for metal intensity
+                                const turbulence = audioData.bass > 0.6 ? (Math.random() - 0.5) * audioData.bass * 10 : 0;
+                                
+                                x += radialDir.x * radialWave + turbulence;
+                                y += radialDir.y * radialWave + turbulence;
+                                z += radialDir.z * radialWave + turbulence;
+                            }
+                            
+                            // Pulsate shell size with beat
+                            if (audioData.isBeat) {
+                                // METAL: Extreme pulse intensity for metal beats
+                                const pulseFactor = 1 + audioData.bass * 0.7; // Increased from 0.3 to 0.7
+                                x *= pulseFactor;
+                                y *= pulseFactor;
+                                z *= pulseFactor;
+                                
+                                // Add random dispersion on strong beats for metal chaos
+                                if (audioData.bass > 0.7) {
+                                    x += (Math.random() - 0.5) * audioData.bass * 15;
+                                    y += (Math.random() - 0.5) * audioData.bass * 15;
+                                    z += (Math.random() - 0.5) * audioData.bass * 15;
+                                }
+                            }
+                        }
+                        
+                        // Cross-influence between particle groups for more cohesive fluid motion
+                        // Apply influence from vortex points to all particles
+                        if (window.vortexPoints && window.vortexPoints.length > 0 && 
+                            particleGroup !== 0 && // Don't doubly apply to group 0
+                            audioData.bass > 0.6) { // Only on strong bass
+                            
+                            // Find closest vortex
+                            let closestVortex = null;
+                            let closestDist = Infinity;
+                            
+                            for (const vortex of window.vortexPoints) {
+                                const dx = x - vortex.x;
+                                const dy = y - vortex.y;
+                                const dz = z - vortex.z;
+                                const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                                
+                                if (distance < closestDist) {
+                                    closestDist = distance;
+                                    closestVortex = vortex;
+                                }
+                            }
+                            
+                            // Apply subtle pull toward nearest vortex
+                            // REDUCED: Make cross-influence radius smaller by 33%
+                            if (closestVortex && closestDist < closestVortex.radius * 1.0) { // Reduced from 1.5 to 1.0
+                                // REDUCED: Lower pull strength by 50%
+                                const pullStrength = 0.025 * audioData.bass * // Reduced from 0.05 to 0.025
+                                                   (1 - closestDist / (closestVortex.radius * 1.0)) * 
+                                                   closestVortex.life;
+                                
+                                x = x * (1 - pullStrength) + closestVortex.x * pullStrength;
+                                y = y * (1 - pullStrength) + closestVortex.y * pullStrength;
+                                z = z * (1 - pullStrength) + closestVortex.z * pullStrength;
+                            }
+                        }
+                        
+                        // Apply a global wave field that affects all particles for unified fluid motion
+                        if (animationActive) { // Always apply wave field when audio is active, removed mids threshold
+                            // Create a global wave field using 3D sine waves - DRAMATICALLY ENHANCED for coherent wave simulation
+                            const globalWavePhase = time * 2.5; // Increased from 1.6 to 2.5 for faster waves
+                            
+                            // WAVE-SIMULATION: Much higher amplitude and coherence for connected wave patterns
+                            const primaryWaveAmp = audioData.mids * 18.0; // Increased from 12.0 to 18.0 for stronger waves
+                            const secondaryWaveAmp = audioData.bass * 14.0; // Increased from 8.0 to 14.0
+                            
+                            // WAVE-SIMULATION: Reduced frequency for longer wavelengths to create more connected patterns
+                            const waveFreq = 0.009; // Reduced from 0.015 for even longer wavelengths and more coherence
+                            
+                            // Primary wave field with longer wavelengths for more connected motion
+                            const fieldX = Math.sin(globalWavePhase + y * waveFreq + z * waveFreq) * primaryWaveAmp;
+                            const fieldY = Math.sin(globalWavePhase + 2.1 + x * waveFreq + z * waveFreq) * primaryWaveAmp;
+                            const fieldZ = Math.sin(globalWavePhase + 4.2 + x * waveFreq + y * waveFreq) * primaryWaveAmp;
+                            
+                            // Secondary wave field with different frequency creates more complex interactions
+                            const secondaryPhase = time * 1.8; // Increased from 1.1 to 1.8
+                            const secondaryFreq = 0.008; // Reduced from 0.012 for longer wavelengths
+                            const fieldX2 = Math.cos(secondaryPhase + y * secondaryFreq + z * secondaryFreq) * secondaryWaveAmp;
+                            const fieldY2 = Math.cos(secondaryPhase + 1.5 + x * secondaryFreq + z * secondaryFreq) * secondaryWaveAmp;
+                            const fieldZ2 = Math.cos(secondaryPhase + 3.0 + x * secondaryFreq + y * secondaryFreq) * secondaryWaveAmp;
+                            
+                            // WAVE-SIMULATION: Add tertiary wave system for more complex, connected patterns
+                            const tertiaryPhase = time * 1.4;
+                            const tertiaryFreq = 0.006; // Very long wavelength for large-scale motion (reduced from 0.008)
+                            const tertiaryAmp = audioData.treble * 10.0; // Increased from 6.0 to 10.0
+                            const fieldX3 = Math.sin(tertiaryPhase + x * tertiaryFreq + y * tertiaryFreq) * tertiaryAmp;
+                            const fieldY3 = Math.sin(tertiaryPhase + 2.0 + y * tertiaryFreq + z * tertiaryFreq) * tertiaryAmp;
+                            const fieldZ3 = Math.sin(tertiaryPhase + 4.0 + z * tertiaryFreq + x * tertiaryFreq) * tertiaryAmp;
+                            
+                            // Apply the combined fields with dramatically enhanced strength
+                            const influenceStrength = 0.7; // Dramatically increased from 0.5 to 0.7
+                            x += (fieldX + fieldX2 * 0.9 + fieldX3 * 0.7) * influenceStrength;
+                            y += (fieldY + fieldY2 * 0.9 + fieldY3 * 0.7) * influenceStrength;
+                            z += (fieldZ + fieldZ2 * 0.9 + fieldZ3 * 0.7) * influenceStrength;
+                            
+                            // WAVE-SIMULATION: Add radial ripple waves emanating from center with enhanced strength
+                            const distFromCenter = Math.sqrt(x*x + y*y + z*z);
+                            // Use multiple superimposed ripples with different frequencies
+                            const ripplePhase1 = globalWavePhase * 0.8;
+                            const ripplePhase2 = globalWavePhase * 1.2;
+                            // Add a third ripple layer for more complexity
+                            const ripplePhase3 = globalWavePhase * 0.5; 
+                            
+                            const rippleFreq1 = 0.03 + audioData.bass * 0.02; // Reduced from 0.04 for longer waves
+                            const rippleFreq2 = 0.045 + audioData.treble * 0.03; // Reduced from 0.06
+                            const rippleFreq3 = 0.015 + audioData.mids * 0.01; // New very long wavelength ripple
+                            
+                            // Ripple amplitudes increase with audio intensity
+                            const rippleAmp1 = audioData.bass * 25.0; // Increased from 15.0 to 25.0
+                            const rippleAmp2 = audioData.mids * 20.0; // Increased from 12.0 to 20.0
+                            const rippleAmp3 = audioData.volume * 15.0; // New ripple amplitude
+                            
+                            // Calculate ripple displacement with phase offset to create traveling waves
+                            const ripple1 = Math.sin(distFromCenter * rippleFreq1 - ripplePhase1) * rippleAmp1;
+                            const ripple2 = Math.sin(distFromCenter * rippleFreq2 - ripplePhase2) * rippleAmp2;
+                            const ripple3 = Math.sin(distFromCenter * rippleFreq3 - ripplePhase3) * rippleAmp3;
+                            const totalRipple = ripple1 + ripple2 * 0.7 + ripple3 * 0.5;
+                            
+                            // Apply ripple along the direction from center with increased strength
+                            if (distFromCenter > 0.001) { // Avoid division by zero
+                                const dirX = x / distFromCenter;
+                                const dirY = y / distFromCenter;
+                                const dirZ = z / distFromCenter;
+                                
+                                // Increase ripple effect strength from 0.4 to 0.65
+                                x += dirX * totalRipple * 0.65;
+                                y += dirY * totalRipple * 0.65;
+                                z += dirZ * totalRipple * 0.65;
+                            }
+                        }
+                        
+                        // Apply a global attractor to keep particles from flying too far, but with wave-like pulsing
+                        const distFromOrigin = Math.sqrt(x*x + y*y + z*z);
+                        // WAVE-SIMULATION: Pulsing boundary that creates wave-like shells with enhanced amplitude
+                        const pulseBoundary = 250 + Math.sin(time * 2.5 + distFromOrigin * 0.01) * 50; // Increased from 30 to 50
+                        if (distFromOrigin > pulseBoundary) {
+                            // Pull factor that varies to create shell-like wave formations with stronger effect
+                            const pullFactor = 0.993 + Math.sin(distFromOrigin * 0.05) * 0.004; // Increased from 0.997/0.002 to 0.993/0.004
+                            x *= pullFactor;
+                            y *= pullFactor;
+                            z *= pullFactor;
+                        }
+                        
+                        // WAVE-SIMULATION: Modified blast effect that creates coherent wave formations
+                        if (audioData.isBeat && audioData.bass > 0.55) {
+                            // Calculate direction from center (for radial waves)
+                            const dirFromCenter = new THREE.Vector3(initialX, initialY, initialZ).normalize();
+                            
+                            // Create wave-like explosion with coherent motion pattern
+                            // Use distance from origin to create ring-like wave patterns
+                            const wavePhase = distFromOrigin * 0.05;
+                            const waveFreq = 0.8 + audioData.treble * 0.3;
+                            const waveAmplitude = audioData.bass * 100; // Increased from 70 to 100
+                            
+                            // Calculate wave displacement along radial direction
+                            const wavePulse = Math.sin(wavePhase - time * waveFreq) * waveAmplitude;
+                            
+                            // Use multiple wave rings for more complex patterns
+                            const wave2Phase = distFromOrigin * 0.08;
+                            const wave2Freq = 1.2 + audioData.mids * 0.4;
+                            const wave2Amplitude = audioData.mids * 70;
+                            const wave2Pulse = Math.sin(wave2Phase - time * wave2Freq) * wave2Amplitude;
+                            
+                            // Combine wave pulses for more complex motion
+                            const combinedPulse = wavePulse + wave2Pulse * 0.6;
+                            
+                            // Mix current position with wave-displaced position with enhanced coherence
+                            const waveMixFactor = 0.85; // Increased for stronger coherent motion
+                            x = x * (1-waveMixFactor) + (initialX * explosionFactor + dirFromCenter.x * combinedPulse) * waveMixFactor;
+                            y = y * (1-waveMixFactor) + (initialY * explosionFactor + dirFromCenter.y * combinedPulse) * waveMixFactor;
+                            z = z * (1-waveMixFactor) + (initialZ * explosionFactor + dirFromCenter.z * combinedPulse) * waveMixFactor;
+                        }
+                        
+                        // Update particle positions
+                        positions[i3] = x;
+                        positions[i3 + 1] = y;
+                        positions[i3 + 2] = z;
+                        
+                        // Adaptive color system based on music energy/mood
+                        // Lower threshold to make more songs show colorful mode
+                        if (moodFactor > 0.3) { // LOWERED from 0.6 to 0.3 - allows more songs to show colorful mode
+                            // Use particle index to create varied colors
+                            const colorPhase = (i / PARTICLE_COUNT) * 6.28; // 0 to 2π
+                            
+                            // ENHANCED VIBRANT COLORS: Create more saturated colors
+                            const intensity = Math.min(1.0, audioData.volume * 2.5 + 0.4); // Increased intensity
+                            
+                            // More dramatic color shifts - faster phase rotation and stronger influence 
+                            // from audio frequencies
+                            const r = Math.sin(colorPhase + time) * 0.5 + 0.5;
+                            const g = Math.sin(colorPhase + time + 2.1) * 0.5 + 0.5;
+                            const b = Math.sin(colorPhase + time + 4.2) * 0.5 + 0.5;
+                            
+                            // Apply audio data influence
+                            const finalR = Math.max(0.3, Math.min(1.0, r + audioData.treble * 0.7));
+                            const finalG = Math.max(0.3, Math.min(1.0, g + audioData.mids * 0.7));
+                            const finalB = Math.max(0.3, Math.min(1.0, b + audioData.bass * 0.7));
+                            
+                            // Highlight particles in each group differently
+                            let colorBoost = 0;
+                            if (particleGroup === 0 && window.vortexPoints && window.vortexPoints.length > 0) {
+                                // Brighter vortex particles
+                                colorBoost = 0.3;
+                            } else if (particleGroup === 1 && audioData.mids > 0.5) {
+                                // Brighter wave particles during mids
+                                colorBoost = 0.2;
+                            } else if (particleGroup === 2 && audioData.treble > 0.5) {
+                                // Brighter orbital particles during treble
+                                colorBoost = 0.2;
+                            }
+                            
+                            // Extra bright flash on beat for dramatic bloom
+                            if (audioData.isBeat) {
+                                colors[i3] = Math.min(1.0, finalR + 0.4 + colorBoost);
+                                colors[i3 + 1] = Math.min(1.0, finalG + 0.4 + colorBoost);
+                                colors[i3 + 2] = Math.min(1.0, finalB + 0.4 + colorBoost);
+                            } else {
+                                colors[i3] = Math.min(1.0, finalR + colorBoost);
+                                colors[i3 + 1] = Math.min(1.0, finalG + colorBoost);
+                                colors[i3 + 2] = Math.min(1.0, finalB + colorBoost);
+                            }
+                        } else { // Low energy, mellow music - warm whites and yellows
+                            // Calculate a factor that creates subtle variations
+                            const variation = (Math.sin(i * 0.1 + time) * 0.1) + 0.9;
+                            
+                            // Base warm white to yellow coloration
+                            let r = 0.9 * variation;
+                            let g = (0.8 - audioData.bass * 0.2) * variation;
+                            let b = (0.7 - audioData.bass * 0.3 - audioData.mids * 0.2) * variation;
+                            
+                            // Ensure colors stay in warm white/yellow range
+                            r = Math.min(1.0, Math.max(0.7, r));
+                            g = Math.min(0.9, Math.max(0.5, g));
+                            b = Math.min(0.7, Math.max(0.2, b));
+                            
+                            // Subtle glow on beats
+                            if (audioData.isBeat) {
+                                const beatIntensity = audioData.bass * 0.3;
+                                r = Math.min(1.0, r + beatIntensity);
+                                g = Math.min(1.0, g + beatIntensity * 0.8);
+                                b = Math.min(0.8, b + beatIntensity * 0.4);
+                            }
+                            
+                            colors[i3] = r;
+                            colors[i3 + 1] = g;
+                            colors[i3 + 2] = b;
+                        }
+                    } else {
+                        // Simple ambient movement when no significant audio
+                        const idleTime = time * 0.2; // Slower movement
+                        const idleAngle = idleTime + i * 0.02;
+                        const idleFactor = 0.05; // Subtle movement
+                        
+                        positions[i3] = initialX + Math.cos(idleAngle) * idleFactor;
+                        positions[i3 + 1] = initialY + Math.sin(idleAngle) * idleFactor;
+                        positions[i3 + 2] = initialZ;
+                        
+                        // Calm blue-ish default color
+                        colors[i3] = 0.2;     // R
+                        colors[i3 + 1] = 0.3; // G
+                        colors[i3 + 2] = 0.5; // B
+                    }
+                }
+                
+                // Update geometry attributes
+                particleGeometry.attributes.position.needsUpdate = true;
+                particleGeometry.attributes.color.needsUpdate = true;
+                
+                // Decay active vortex points
+                if (window.vortexPoints && window.vortexPoints.length > 0) {
+                    for (let i = window.vortexPoints.length - 1; i >= 0; i--) {
+                        window.vortexPoints[i].life *= window.vortexPoints[i].decay;
+                        
+                        // Remove vortices that have decayed too much
+                        if (window.vortexPoints[i].life < 0.05) {
+                            window.vortexPoints.splice(i, 1);
+                        }
+                    }
+                }
+                
+                // Particle system rotation - more dramatic during audio
+                if (animationActive) {
+                    // More subtle rotation with this new motion system
+                    const rotationSpeed = 0.002;
+                    particles.rotation.y += rotationSpeed;
+                    particles.rotation.x += rotationSpeed / 2;
+                } else {
+                    // Very slow ambient rotation
+                    particles.rotation.y += 0.0005;
+                    particles.rotation.x += 0.0002;
+                }
+            }
+            
+            // Camera movement
+            if (camera) {
+                if (animationActive) {
+                    // Dynamic camera movement with audio - moved EXTREMELY far back to capture everything
+                    const cameraDistance = 700 - audioData.bass * 25; // Dramatically increased from 550 to 700, reduced bass influence
+                    camera.position.x = Math.sin(audioData.beatProgress * Math.PI * 1.2) * audioData.mids * 15; // Reduced from 20 to 15
+                    camera.position.z = cameraDistance;
+                    camera.position.y = Math.cos(audioData.beatProgress * Math.PI * 1.2) * audioData.treble * 10; // Reduced from 15 to 10
+                } else {
+                    // Static default position - moved much farther back
+                    camera.position.x = 0;
+                    camera.position.y = 0;
+                    camera.position.z = 650; // Increased from 500 to 650
+                }
+                
+                camera.lookAt(scene.position);
+            }
+            
+            // Update the filter UI based on actual values
+            if (filterEnabled && toneFilter) {
+                // Show actual filter frequency in the UI when in auto modes
+                if (filterAutoMode !== "off") {
+                    document.getElementById('freq-value').textContent = 
+                        Math.round(toneFilter.frequency.value);
+                }
+                
+                // Visualize filter effect on the sphere material
+                if (sphere && sphere.material) {
+                    // Add subtle visual cue for filter type
+                    switch (toneFilter.type) {
+                        case "lowpass":
+                            sphere.material.opacity = 0.5 + (audioData.bass * 0.5);
+                            break;
+                        case "highpass":
+                            sphere.material.opacity = 0.5 + (audioData.treble * 0.5);
+                            break;
+                        case "bandpass":
+                        case "notch":
+                            sphere.material.opacity = 0.5 + (audioData.mids * 0.5);
+                            break;
+                        default:
+                            sphere.material.opacity = 0.4;
+                    }
+                }
+                
+                // Make particles respond to filter movement
+                if (particles && particleMaterial && animationActive) {
+                    // Normalized filter frequency (0-1)
+                    const normFreq = (toneFilter.frequency.value - 20) / (20000 - 20);
+                    
+                    // Use filter frequency to influence particle behavior
+                    const distortAmount = normFreq * 0.5; // Amount of spatial distortion
+                    
+                    // Add extra effect to particles based on filter
+                    if (particleGeometry) {
+                        const positions = particleGeometry.attributes.position.array;
+                        
+                        for (let i = 0; i < PARTICLE_COUNT; i++) {
+                            const i3 = i * 3;
+                            
+                            // Add filter-frequency controlled distortion
+                            if (animationActive) {
+                                positions[i3] += (Math.cos(i * normFreq) * distortAmount) - (distortAmount * 0.5);
+                                positions[i3 + 1] += (Math.sin(i * normFreq) * distortAmount) - (distortAmount * 0.5);
+                            }
+                        }
+                        
+                        particleGeometry.attributes.position.needsUpdate = true;
+                    }
+                }
+            }
+            
+            // Render the scene with post-processing
+            composer.render();
+        }
+
+        // --- Utility ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            
+            // Update effect composer size on window resize
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- Start ---
+        init();
+
+    </script>
+</body>
+</html>

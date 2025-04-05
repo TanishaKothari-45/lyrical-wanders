@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chaos Visualizer</title>
+    <style>
+        body { margin: 0; font-family: Arial; background: #111; color: #fff; }
+        #input-container { position: absolute; top: 10px; left: 10px; z-index: 1; padding: 10px; background: rgba(0,0,0,0.5); border-radius: 5px; }
+        #controls { margin-top: 10px; display: flex; gap: 5px; }
+        button { padding: 5px 10px; background: #333; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #555; }
+        button:disabled { background: #222; color: #555; cursor: not-allowed; }
+        canvas { display: block; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; display: none; }
+        #music-info { position: absolute; top: 10px; right: 10px; z-index: 1; padding: 10px; background: rgba(0,0,0,0.5); border-radius: 5px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div id="input-container">
+        <input type="file" id="audioInput" accept="audio/*">
+        <div id="controls">
+            <button id="loadButton">Load Song</button>
+            <button id="playPauseButton" disabled>Play</button>
+            <button id="stopButton" disabled>Stop</button>
+        </div>
+        <div id="nowPlaying" style="margin-top: 5px; font-size: 12px;"></div>
+    </div>
+    <div id="music-info">
+        <div>BPM: <span id="bpm-value">--</span></div>
+        <div>Beat: <span id="beat-value">--</span></div>
+        <div>Energy: <span id="energy-value">--</span></div>
+    </div>
+    <div id="loading">Loading...</div>
+    <div id="frequency-graph-container" style="position: absolute; bottom: 10px; left: 10px; z-index: 1; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px;">
+        <canvas id="frequency-graph" width="300" height="150"></canvas>
+        <div id="labels" style="display: flex; justify-content: space-between; font-size: 12px;">
+            <span>Bass</span>
+            <span>Mids</span>
+            <span>Treble</span>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script>
+        // Three.js setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111111); // Set a dark background
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 5;
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        // Create sphere with more segments for smoother deformation
+        const geometry = new THREE.SphereGeometry(1, 32, 32); // Reduced segment count for better performance
+        
+        // Store original positions for deformation calculations
+        const originalPositions = geometry.attributes.position.array.slice();
+        
+        // Use MeshStandardMaterial for better lighting response
+        const material = new THREE.MeshStandardMaterial({ 
+            color: 0xffffff,
+            roughness: 0.4,
+            metalness: 0.1,
+            emissive: 0x222222,
+            emissiveIntensity: 0.2
+        });
+        
+        const sphere = new THREE.Mesh(geometry, material);
+        scene.add(sphere);
+        
+        // Simpler lighting setup
+        const ambientLight = new THREE.AmbientLight(0x666666, 0.8);
+        scene.add(ambientLight);
+        
+        const pointLight = new THREE.PointLight(0xffffff, 1.0);
+        pointLight.position.set(3, 3, 5);
+        scene.add(pointLight);
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Audio analysis variables
+        let audioPlaying = false;
+        let player = null;
+        let fft = null;
+        let meter = null;
+        let bpmDetector = null;
+        let beatDetector = null;
+        
+        // Musical metrics
+        let bpm = 0;
+        let currentBeat = 0;
+        let onBeat = false;
+        let lastBeatTime = 0;
+        let energyLevel = 0;
+        
+        // Frequency data
+        let dataArray = new Uint8Array(128);
+        let bass = 0;
+        let mids = 0;
+        let treble = 0;
+        let intensity = 0;
+
+        // Set up the frequency graph
+        const freqCanvas = document.getElementById('frequency-graph');
+        const freqCtx = freqCanvas.getContext('2d');
+
+        function drawFrequencyGraph() {
+            if (!fft) return;
+            
+            const width = freqCanvas.width;
+            const height = freqCanvas.height;
+            
+            // Clear the canvas
+            freqCtx.fillStyle = 'rgb(20, 20, 20)';
+            freqCtx.fillRect(0, 0, width, height);
+            
+            // Draw the frequency data
+            const barWidth = (width / dataArray.length) * 2.5;
+            let x = 0;
+            
+            // Draw frequency bars
+            for (let i = 0; i < dataArray.length; i++) {
+                const barHeight = (dataArray[i] / 256) * height;
+                
+                // Color based on frequency range
+                if (i < 32) { // Bass (0-32)
+                    freqCtx.fillStyle = 'rgb(255, 0, 0)'; // Red for bass
+                } else if (i < 96) { // Mids (32-96)
+                    freqCtx.fillStyle = 'rgb(0, 255, 0)'; // Green for mids
+                } else { // Treble (96+)
+                    freqCtx.fillStyle = 'rgb(0, 0, 255)'; // Blue for treble
+                }
+                
+                // Draw bar
+                freqCtx.fillRect(x, height - barHeight, barWidth, barHeight);
+                
+                x += barWidth + 1; // 1px gap between bars
+            }
+            
+            // Draw dividers between frequency ranges
+            freqCtx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            freqCtx.beginPath();
+            // Bass/Mids divider
+            freqCtx.moveTo(32 * barWidth, 0);
+            freqCtx.lineTo(32 * barWidth, height);
+            // Mids/Treble divider
+            freqCtx.moveTo(96 * barWidth, 0);
+            freqCtx.lineTo(96 * barWidth, height);
+            freqCtx.stroke();
+            
+            // Draw average lines
+            freqCtx.strokeStyle = 'rgb(255, 255, 255)';
+            freqCtx.lineWidth = 2;
+            
+            // Bass average
+            freqCtx.beginPath();
+            freqCtx.moveTo(0, height - (bass * height));
+            freqCtx.lineTo(32 * barWidth, height - (bass * height));
+            freqCtx.stroke();
+            
+            // Mids average
+            freqCtx.beginPath();
+            freqCtx.moveTo(32 * barWidth, height - (mids * height));
+            freqCtx.lineTo(96 * barWidth, height - (mids * height));
+            freqCtx.stroke();
+            
+            // Treble average
+            freqCtx.beginPath();
+            freqCtx.moveTo(96 * barWidth, height - (treble * height));
+            freqCtx.lineTo(width, height - (treble * height));
+            freqCtx.stroke();
+            
+            // Add text for values
+            freqCtx.fillStyle = 'white';
+            freqCtx.font = '12px Arial';
+            freqCtx.fillText(`Bass: ${bass.toFixed(2)}`, 5, 15);
+            freqCtx.fillText(`Mids: ${mids.toFixed(2)}`, width/3 + 5, 15);
+            freqCtx.fillText(`Treble: ${treble.toFixed(2)}`, 2*width/3 + 5, 15);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Always rotate sphere gently for visual interest
+            sphere.rotation.y += 0.003;
+            sphere.rotation.x += 0.001;
+            
+            // Make sure sphere is visible
+            sphere.visible = true;
+            
+            // Reset sphere scale if it's too extreme
+            if (sphere.scale.x <= 0.1 || sphere.scale.x >= 10) {
+                sphere.scale.set(1, 1, 1);
+            }
+            
+            // Always render the scene
+            renderer.render(scene, camera);
+            
+            if (fft && audioPlaying) {
+                try {
+                    // Get frequency data from Tone.js analyzer
+                    const freqData = fft.getValue();
+                    
+                    // Check if we got valid data
+                    if (!freqData || freqData.length < 32) {
+                        console.log("No valid frequency data available");
+                        return;
+                    }
+                    
+                    // Convert frequency data to appropriate format for visualization
+                    for (let i = 0; i < Math.min(dataArray.length, freqData.length); i++) {
+                        // Convert dB values (typically negative) to 0-255 range for visualization
+                        const normalizedValue = (freqData[i] + 140) * 2; // Adjust range (typically -140 to -30 dB)
+                        dataArray[i] = Math.max(0, Math.min(255, normalizedValue));
+                    }
+                    
+                    // Calculate audio metrics
+                    bass = 0;
+                    for (let i = 0; i < 32; i++) {
+                        bass += dataArray[i] / 255;
+                    }
+                    bass = bass / 32;
+                    
+                    mids = 0;
+                    for (let i = 32; i < 96; i++) {
+                        mids += dataArray[i] / 255;
+                    }
+                    mids = mids / 64;
+                    
+                    treble = 0;
+                    for (let i = 96; i < dataArray.length; i++) {
+                        treble += dataArray[i] / 255;
+                    }
+                    treble = treble / (dataArray.length - 96);
+                    
+                    // Ensure we have valid values
+                    bass = isNaN(bass) ? 0 : bass;
+                    mids = isNaN(mids) ? 0 : mids;
+                    treble = isNaN(treble) ? 0 : treble;
+                    
+                    intensity = (bass * 0.5 + mids * 0.3 + treble * 0.2);
+                    
+                    // Get current audio time
+                    const now = Tone.now();
+                    
+                    // Calculate if we're on a beat
+                    if (bpm > 0) {
+                        const beatsPerSecond = bpm / 60;
+                        const beatDuration = 1 / beatsPerSecond;
+                        const beatsSinceStart = now / beatDuration;
+                        currentBeat = Math.floor(beatsSinceStart % 4) + 1; // 1-4 for musical beats
+                        
+                        // Detect if we're at the start of a beat (within a small window)
+                        const timeSinceLastBeat = now - lastBeatTime;
+                        if (timeSinceLastBeat >= beatDuration * 0.95) {
+                            onBeat = true;
+                            lastBeatTime = now;
+                        } else {
+                            onBeat = false;
+                        }
+                        
+                        // Update beat display
+                        document.getElementById('beat-value').textContent = currentBeat;
+                    }
+                    
+                    // Update energy level with meter reading if available
+                    if (meter) {
+                        try {
+                            let meterValue = meter.getValue();
+                            // Check for valid meter value (avoid NaN, Infinity)
+                            if (isFinite(meterValue)) {
+                                energyLevel = energyLevel * 0.9 + Math.min(1, Math.max(0, meterValue)) * 0.1;
+                            }
+                        } catch (e) {
+                            console.warn("Meter reading error:", e);
+                            // Use intensity as fallback
+                            energyLevel = intensity;
+                        }
+                        document.getElementById('energy-value').textContent = energyLevel.toFixed(2);
+                    } else {
+                        // Use intensity as fallback
+                        energyLevel = intensity;
+                        document.getElementById('energy-value').textContent = energyLevel.toFixed(2);
+                    }
+                    
+                    // Simple color mapping
+                    const r = Math.min(1, bass * 1.5 + 0.2);
+                    const g = Math.min(1, mids * 1.5 + 0.2);
+                    const b = Math.min(1, treble * 1.5 + 0.2);
+                    
+                    // Apply colors
+                    material.color.setRGB(r, g, b);
+                    
+                    // Gentle pulse effect
+                    if (onBeat) {
+                        material.emissiveIntensity = 0.4;
+                        // Less aggressive scaling
+                        sphere.scale.setScalar(1 + Math.min(0.5, bass));
+                    } else {
+                        material.emissiveIntensity = 0.2;
+                        sphere.scale.setScalar(1 + Math.min(0.3, bass * 0.5));
+                    }
+                    
+                    // Light color matches sphere
+                    pointLight.color.setRGB(r, g, b);
+                    
+                    // Rotation speed
+                    const bpmFactor = (bpm > 0) ? bpm / 120 : 1; // Default to 1 if bpm not available
+                    sphere.rotation.y += treble * 0.02 * bpmFactor;
+                    sphere.rotation.x += mids * 0.01 * bpmFactor;
+                    
+                    // Simpler deformation with safety limits
+                    if (bass > 0.2 || onBeat) {
+                        const positions = geometry.attributes.position.array;
+                        
+                        // Limit deformation amount
+                        const bassImpact = Math.min(0.1, bass * 0.2);
+                        
+                        for (let i = 0; i < positions.length; i += 3) {
+                            const originalX = originalPositions[i];
+                            const originalY = originalPositions[i+1];
+                            const originalZ = originalPositions[i+2];
+                            
+                            // Simple radial deformation
+                            positions[i] = originalX * (1 + bassImpact);
+                            positions[i+1] = originalY * (1 + bassImpact);
+                            positions[i+2] = originalZ * (1 + bassImpact);
+                        }
+                        
+                        geometry.attributes.position.needsUpdate = true;
+                    } else {
+                        // Reset shape
+                        const positions = geometry.attributes.position.array;
+                        for (let i = 0; i < positions.length; i++) {
+                            positions[i] = originalPositions[i];
+                        }
+                        geometry.attributes.position.needsUpdate = true;
+                    }
+                    
+                    // Draw the frequency graph
+                    drawFrequencyGraph();
+                } catch (e) {
+                    console.error("Error in animation:", e);
+                    // Keep sphere visible and in default state
+                    material.color.setRGB(1, 1, 1);
+                    sphere.scale.setScalar(1);
+                }
+            }
+        }
+        animate();
+
+        // Load the audio and set up the analyser
+        async function loadAudio() {
+            try {
+                const audioFile = document.getElementById('audioInput').files[0];
+                if (!audioFile) {
+                    alert('Please select an audio file first');
+                    return;
+                }
+                
+                document.getElementById('loading').style.display = 'block';
+                
+                // Clean up previous audio if exists
+                if (player) {
+                    player.stop();
+                    audioPlaying = false;
+                }
+
+                // Start Tone.js context if needed
+                await Tone.start();
+                
+                // Create audio URL
+                const audioURL = URL.createObjectURL(audioFile);
+                
+                // Create Tone.js player
+                player = new Tone.Player({
+                    url: audioURL,
+                    autostart: false,
+                    onload: () => {
+                        console.log("Audio loaded");
+                        
+                        // Create audio analyzers once the player is loaded
+                        fft = new Tone.FFT(128);
+                        meter = new Tone.Meter();
+                        
+                        // Connect player to analyzers and output
+                        player.connect(fft);
+                        player.connect(meter);
+                        player.toDestination();
+                        
+                        console.log("Player, FFT and meter initialized:", player, fft, meter);
+                        
+                        // Add BPM detection (simplified version)
+                        // In a real app, you might want to use a more sophisticated method
+                        // or library like Meyda.js for better BPM detection
+                        detectBPM(audioURL).then(detectedBPM => {
+                            bpm = detectedBPM;
+                            document.getElementById('bpm-value').textContent = bpm.toFixed(0);
+                        });
+                        
+                        // Enable controls
+                        document.getElementById('playPauseButton').disabled = false;
+                        document.getElementById('stopButton').disabled = false;
+                        document.getElementById('playPauseButton').textContent = 'Play';
+                        document.getElementById('nowPlaying').textContent = 'Loaded: ' + audioFile.name;
+                        
+                        document.getElementById('loading').style.display = 'none';
+                        
+                        // Add event listener for when playback ends
+                        player.onstop = () => {
+                            audioPlaying = false;
+                            document.getElementById('playPauseButton').textContent = 'Play';
+                        };
+                    }
+                });
+            } catch (e) {
+                console.error("Error loading audio:", e);
+                document.getElementById('loading').style.display = 'none';
+                alert("Error loading audio. Please try again.");
+            }
+        }
+        
+        // Very basic BPM detection function
+        // This is a simplified approach - a full implementation would be more complex
+        async function detectBPM(audioURL) {
+            // Create a temporary audio element to analyze
+            return new Promise((resolve) => {
+                // For now, return a default BPM
+                // In a real implementation, we would analyze the audio
+                setTimeout(() => {
+                    // Return a random BPM between 90-140 for demonstration
+                    // Replace this with actual analysis in a real app
+                    resolve(Math.floor(Math.random() * 50) + 90);
+                }, 500);
+            });
+        }
+        
+        // Play/Pause the audio
+        function togglePlayPause() {
+            if (!player) return;
+            
+            if (audioPlaying) {
+                Tone.Transport.pause();
+                player.stop();
+                audioPlaying = false;
+                document.getElementById('playPauseButton').textContent = 'Play';
+            } else {
+                player.start();
+                audioPlaying = true;
+                document.getElementById('playPauseButton').textContent = 'Pause';
+            }
+        }
+        
+        // Stop the audio and reset position
+        function stopAudio() {
+            if (!player) return;
+            
+            player.stop();
+            audioPlaying = false;
+            document.getElementById('playPauseButton').textContent = 'Play';
+        }
+
+        // Set up event listeners
+        document.getElementById('loadButton').addEventListener('click', loadAudio);
+        document.getElementById('playPauseButton').addEventListener('click', togglePlayPause);
+        document.getElementById('stopButton').addEventListener('click', stopAudio);
+    </script>
+</body>
+</html>
