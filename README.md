@@ -16,6 +16,7 @@ An advanced, immersive audio visualizer that creates dynamic, wave-based visuali
 - **Interactive Audio Filter**: Modify your music with adjustable filter types (lowpass, highpass, bandpass) with frequency and resonance controls
 - **Post-Processing Effects**: Bloom effect enhances visual appeal with audio-responsive glow
 - **Camera Movement**: Dynamic camera responds to music for immersive viewing experience
+- **Video Recording**: Capture 10-second WebM videos of your visualizations with synchronized audio for sharing
 - **Highly Customizable**: Fine-tuned parameters for different music styles
 
 ## Getting Started
@@ -43,16 +44,25 @@ cd lyrical-wonders
 1. Click the "Choose Audio File" button to choose a music file
 2. Adjust the volume using the slider
 3. Hit "Play" button to see our visualiser making effect
-3. Try different filter settings to alter the audio:
+4. Try different filter settings to alter the audio:
    - **Filter Type**: Select between lowpass, highpass, bandpass, or none
    - **Frequency**: Adjust the cutoff frequency
    - **Resonance**: Control the resonance/Q of the filter
    - **Automation**: Enable automatic filter sweeping
+5. Record your visualization:
+   - Click the red "Record" button in the bottom-right corner
+   - The visualizer will record for 10 seconds with a countdown
+   - After recording completes, the video will automatically download with a timestamp in the filename
+   - Share your creation on social media platforms like Twitter/X or LinkedIn
 
 ## Technologies Used
 
 - [Three.js](https://threejs.org/) - WebGL-based 3D graphics library
 - [Tone.js](https://tonejs.github.io/) - Web Audio framework for audio processing
+- Web APIs:
+  - Canvas API with captureStream() for WebGL recording
+  - MediaRecorder API for video capture
+  - MediaStream API for audio/video stream handling
 - HTML5/CSS3/JavaScript - Core web technologies
 
 ## Performance Tips
@@ -60,6 +70,7 @@ cd lyrical-wonders
 - For optimal performance, close unnecessary browser tabs and applications
 - Reduce particle count in settings if experiencing lag on older hardware
 - Best experienced on a computer with dedicated graphics
+- Video recording requires additional system resources - if you experience performance issues during recording, try closing other applications
 
 ## Future Enhancements
 
@@ -67,6 +78,7 @@ cd lyrical-wonders
 - Additional visual presets for different music genres
 - Audio input from microphone for live performance visualization
 - Beat mapping for synchronized visual events
+- Extended recording options with different quality settings and durations
 
 ## License
 

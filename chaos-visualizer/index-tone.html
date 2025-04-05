@@ -2209,11 +2209,20 @@
             // Create download URL
             const url = URL.createObjectURL(blob);
             
-            // Create download link
+            // Create timestamp for filename (YYYY-MM-DD_HH-MM-SS format)
+            const now = new Date();
+            const timestamp = now.getFullYear() + '-' + 
+                              String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                              String(now.getDate()).padStart(2, '0') + '_' + 
+                              String(now.getHours()).padStart(2, '0') + '-' + 
+                              String(now.getMinutes()).padStart(2, '0') + '-' + 
+                              String(now.getSeconds()).padStart(2, '0');
+            
+            // Create download link with timestamped filename
             const a = document.createElement('a');
             a.style.display = 'none';
             a.href = url;
-            a.download = 'chaos-visualization.webm';
+            a.download = 'chaos-visualization_' + timestamp + '.webm';
             document.body.appendChild(a);
             a.click();
             
@@ -2226,7 +2235,7 @@
             // Show sharing options
             showSharingOptions(url, 'webm');
             
-            console.log('Recording saved');
+            console.log('Recording saved with timestamp: ' + timestamp);
         }
         
         // Show sharing options modal
