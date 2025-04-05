@@ -14,13 +14,10 @@
             overflow: hidden; /* Prevent scrollbars */
         }
         #ui-container {
-            position: absolute;
-            top: 15px;
-            left: 15px;
+            position: fixed;
+            top: 20px;
+            right: 20px;
             z-index: 10;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
         }
         .control-panel {
             padding: 15px;
@@ -149,6 +146,109 @@
         #filter-toggle.active {
             background: linear-gradient(145deg, #5a3a3a, #3a2a2a);
         }
+        
+        /* Recording button and timer styles */
+        #record-button {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: linear-gradient(145deg, #aa3333, #882222);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            font-size: 12px;
+            cursor: pointer;
+            z-index: 100;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+        
+        #record-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.4);
+        }
+        
+        #record-button.recording {
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); background: linear-gradient(145deg, #aa3333, #882222); }
+            50% { transform: scale(1.1); background: linear-gradient(145deg, #cc3333, #aa2222); }
+            100% { transform: scale(1); background: linear-gradient(145deg, #aa3333, #882222); }
+        }
+        
+        #recording-timer {
+            position: fixed;
+            bottom: 90px;
+            right: 20px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            z-index: 100;
+            display: none;
+        }
+        
+        /* Sharing modal styles */
+        #sharing-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(30, 30, 30, 0.95);
+            border-radius: 8px;
+            padding: 25px;
+            z-index: 1000;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            display: none;
+            color: white;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        #sharing-modal h3 {
+            margin-top: 0;
+            color: #ffffff;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+        
+        #sharing-modal p {
+            margin-bottom: 15px;
+            line-height: 1.5;
+            font-size: 14px;
+        }
+        
+        #sharing-modal a {
+            color: #4da6ff;
+            text-decoration: none;
+        }
+        
+        #sharing-modal a:hover {
+            text-decoration: underline;
+        }
+        
+        #sharing-modal .close-button {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            color: #aaa;
+            font-size: 20px;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        
+        #sharing-modal .close-button:hover {
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -207,6 +307,25 @@
     </div>
 
     <div id="loading">Loading...</div>
+    
+    <!-- Recording UI elements -->
+    <button id="record-button">Record</button>
+    <div id="recording-timer">00:10</div>
+    
+    <!-- Sharing modal -->
+    <div id="sharing-modal">
+        <span class="close-button">&times;</span>
+        <h3>Recording Complete!</h3>
+        <p>Your 10-second visualization has been saved as a WebM video.</p>
+        
+        <h4>Sharing Tips:</h4>
+        <p><strong>Twitter/X:</strong> Upload directly - WebM format works great.</p>
+        <p><strong>LinkedIn:</strong> For best results, convert to MP4 first using a tool like <a href="https://cloudconvert.com/webm-to-mp4" target="_blank">CloudConvert</a>.</p>
+        
+        <p><small>Note: If needed, you can convert to MP4 using free online tools like 
+        <a href="https://cloudconvert.com/webm-to-mp4" target="_blank">CloudConvert</a> or 
+        <a href="https://www.freeconvert.com/webm-to-mp4" target="_blank">FreeConvert</a>.</small></p>
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
@@ -230,6 +349,14 @@
         let particles, particleGeometry, particleMaterial;
         let particlePositions, particleColors, initialParticlePositions;
         let sphere, sphereVertices;
+
+        // Recording variables
+        let mediaRecorder;
+        let recordedChunks = [];
+        let isRecording = false;
+        let recordingTimer;
+        let recordingDuration = 10; // seconds - changed from 15 to 10
+        let countdownInterval;
 
         // *** TONE.JS VARIABLES ***
         let toneMeter = null; // To measure volume level for transient detection
@@ -1907,7 +2034,221 @@
 
         // --- Start ---
         init();
+        
+        // --- Recording functionality ---
+        
+        // Set up recording UI and events
+        function setupRecording() {
+            const recordButton = document.getElementById('record-button');
+            const recordingTimerDisplay = document.getElementById('recording-timer');
+            const sharingModal = document.getElementById('sharing-modal');
+            const closeButton = document.querySelector('#sharing-modal .close-button');
+            
+            // Add event listeners
+            recordButton.addEventListener('click', toggleRecording);
+            closeButton.addEventListener('click', () => {
+                sharingModal.style.display = 'none';
+            });
+            
+            // Initialize recording timer display
+            recordingTimerDisplay.textContent = formatTime(recordingDuration);
+        }
+        
+        // Toggle recording state
+        function toggleRecording() {
+            if (!isRecording) {
+                startRecording();
+            } else {
+                stopRecording();
+            }
+        }
+        
+        // Start recording
+        function startRecording() {
+            if (!renderer || !renderer.domElement) {
+                console.error('Canvas not available');
+                return;
+            }
+            
+            // Check if the audio is playing
+            if (!audioPlaying && tonePlayer) {
+                alert('Please start audio playback before recording.');
+                return;
+            }
+            
+            try {
+                // Get the canvas stream
+                const canvasStream = renderer.domElement.captureStream(30); // 30 FPS
+                
+                // Create an audio destination from Tone.js
+                const audioDestination = Tone.getContext().createMediaStreamDestination();
+                
+                // Connect Tone player to the destination
+                if (tonePlayer) {
+                    // If we have a filter, connect through it
+                    if (filterEnabled && toneFilter) {
+                        tonePlayer.connect(toneFilter);
+                        toneFilter.connect(audioDestination);
+                    } else {
+                        tonePlayer.connect(audioDestination);
+                    }
+                }
+                
+                // Get audio tracks
+                const audioTracks = audioDestination.stream.getAudioTracks();
+                
+                // Combine tracks
+                const combinedStream = new MediaStream();
+                
+                // Add video track from canvas
+                canvasStream.getVideoTracks().forEach(track => {
+                    combinedStream.addTrack(track);
+                });
+                
+                // Add audio tracks if available
+                if (audioTracks.length > 0) {
+                    audioTracks.forEach(track => {
+                        combinedStream.addTrack(track);
+                    });
+                }
+                
+                // Set up MediaRecorder with options
+                const options = {
+                    mimeType: 'video/webm;codecs=vp9,opus',
+                    videoBitsPerSecond: 5000000 // 5 Mbps for good quality
+                };
+                
+                // Create MediaRecorder
+                mediaRecorder = new MediaRecorder(combinedStream, options);
+                
+                // Set up event handlers
+                mediaRecorder.ondataavailable = handleDataAvailable;
+                mediaRecorder.onstop = finalizeRecording;
+                
+                // Clear previous chunks
+                recordedChunks = [];
+                
+                // Start recording
+                mediaRecorder.start(100); // Collect data in chunks of 100ms
+                
+                // Update UI
+                isRecording = true;
+                const recordButton = document.getElementById('record-button');
+                const recordingTimerDisplay = document.getElementById('recording-timer');
+                
+                recordButton.classList.add('recording');
+                recordButton.textContent = 'Stop';
+                recordingTimerDisplay.style.display = 'block';
+                
+                // Start countdown
+                let timeLeft = recordingDuration;
+                recordingTimerDisplay.textContent = formatTime(timeLeft);
+                
+                countdownInterval = setInterval(() => {
+                    timeLeft--;
+                    recordingTimerDisplay.textContent = formatTime(timeLeft);
+                    
+                    if (timeLeft <= 0) {
+                        stopRecording();
+                    }
+                }, 1000);
+                
+                // Set timeout to stop recording after duration
+                recordingTimer = setTimeout(() => {
+                    if (isRecording) {
+                        stopRecording();
+                    }
+                }, recordingDuration * 1000);
+                
+                console.log('Recording started');
+            } catch (error) {
+                console.error('Error starting recording:', error);
+                alert('Could not start recording: ' + error.message);
+            }
+        }
+        
+        // Stop recording
+        function stopRecording() {
+            if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+                return;
+            }
+            
+            // Stop media recorder
+            mediaRecorder.stop();
+            
+            // Clear timers
+            clearTimeout(recordingTimer);
+            clearInterval(countdownInterval);
+            
+            // Update UI
+            isRecording = false;
+            const recordButton = document.getElementById('record-button');
+            const recordingTimerDisplay = document.getElementById('recording-timer');
+            
+            recordButton.classList.remove('recording');
+            recordButton.textContent = 'Record';
+            recordingTimerDisplay.style.display = 'none';
+            
+            console.log('Recording stopped');
+        }
+        
+        // Handle recorded data
+        function handleDataAvailable(event) {
+            if (event.data && event.data.size > 0) {
+                recordedChunks.push(event.data);
+            }
+        }
+        
+        // Finalize recording and create download
+        function finalizeRecording() {
+            // Create blob from chunks
+            const blob = new Blob(recordedChunks, {
+                type: 'video/webm'
+            });
+            
+            // Create download URL
+            const url = URL.createObjectURL(blob);
+            
+            // Create download link
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = 'chaos-visualization.webm';
+            document.body.appendChild(a);
+            a.click();
+            
+            // Clean up
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+            
+            // Show sharing options
+            showSharingOptions(url, 'webm');
+            
+            console.log('Recording saved');
+        }
+        
+        // Show sharing options modal
+        function showSharingOptions(videoUrl, format) {
+            const sharingModal = document.getElementById('sharing-modal');
+            sharingModal.style.display = 'block';
+        }
+        
+        // Format time for display (MM:SS)
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
+            return `${mins}:${secs}`;
+        }
 
+        // --- Utility ---
+        function onWindowResize() {
+            // ... existing code ...
+        }
+        
+        // Initialize recording functionality after page loads
+        window.addEventListener('DOMContentLoaded', setupRecording);
     </script>
 </body>
 </html>
